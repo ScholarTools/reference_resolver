@@ -73,6 +73,7 @@ import json
 import csv
 import os.path
 import importlib
+from pypub.utils import convert_to_dict
 
 #TODO: Move this into a compatability module
 #-----------------------------------------------------
@@ -86,73 +87,171 @@ else:
     from urllib.parse import quote as urllib_quote
 #-----------------------------------------------------
 
+def resolve_citation(citation):
+    # Encode raw citation
+    citation = urllib_quote(citation)
 
-citation = 'Senís, Elena, et al. "CRISPR/Cas9‐mediated genome engineering: An adeno‐associated viral (AAV) vector ' + \
-           'toolbox. Biotechnology journal 9.11 (2014): 1402-1412.'
-citation = urllib_quote(citation)
+    # Search for citation on CrossRef.org to try to get a DOI link
+    api_search_url = 'http://search.labs.crossref.org/dois?q=' + citation
+    response = requests.get(api_search_url).json()
+    doi = response[0]['doi']
+    print(doi)
 
-api_search_url = 'http://search.labs.crossref.org/dois?q=' + citation
-response = requests.get(api_search_url).json()
-doi = response[0]['doi']
-print(doi)
+    # If crossref returns a http://dx.doi.org/ link, retrieve the doi from it
+    if doi[0:18] == 'http://dx.doi.org/':
+        doi = doi[18:]
+    doi_prefix = doi[0:7]
 
-# If crossref returns a http://dx.doi.org/ link, retrieve the doi from it
-if doi[0:18] == 'http://dx.doi.org/':
-    doi = doi[18:]
+    # Check if this DOI has been searched and saved before.
+    # If it has, return saved information
+    saved_info = get_saved_info(doi)
+    if saved_info is not None:
+        return saved_info
 
-doi_prefix = doi[0:7]
+    [entry_dict, refs_dicts, url] = doi_to_info(doi, doi_prefix)
 
-print(doi)
-print(doi_prefix)
+    idnum = assign_id()
+
+    log_info(doi, doi_prefix, idnum, entry_dict, refs_dicts, url)
+
+    print(doi)
+
+    paper_info = {'entry' : entry_dict, 'references' : refs_dicts, 'doi' : doi, 'url' : url}
+
+    return paper_info
+
+def resolve_doi(doi):
+    doi_prefix = doi[0:7]
+
+    # Same steps as in resolve_citation
+    saved_info = get_saved_info(doi)
+    if saved_info is not None:
+        return saved_info
+
+    [entry_dict, refs_dicts, url] = doi_to_info(doi, doi_prefix)
+    idnum = assign_id()
+
+    log_info(doi, doi_prefix, idnum, entry_dict, refs_dicts, url)
+    paper_info = {'entry' : entry_dict, 'references' : refs_dicts, 'doi' : doi, 'url' : url}
+    return paper_info
+
+def resolve_link(link):
+
+    # First format the link correctly and determine the publisher
+    # ---------------------
+    # Make sure 'http://' and not 'www.' is at the beginning
+    link = link.replace('www.', '')
+    if link[0:4] != 'http':
+        link = 'http://' + link
+
+    base_url = link[:link.find('.com')+4]
+
+    # Now search the site_features.csv file to get information relevant to that provider
+    with open('site_features.csv') as f:
+        reader = csv.reader(f)
+        headings = next(reader)  # Save the first line as the headings
+        values = None
+        for row in enumerate(reader):
+            if base_url in row[1]:
+                values = row[1]  # Once the correct row is found, save it as values
+                break
+
+    return None
 
 
-# TODO: Implement DOI to provider matching
+def doi_to_info(doi, doi_prefix):
 
-# Import current prefix dict
-with open('doi_prefix_dict.txt', 'r') as f:
-    str_dict = f.read()
-prefix_dict = json.loads(str_dict)
+    # Import current prefix dict
+    with open('doi_prefix_dict.txt', 'r') as f:
+        str_dict = f.read()
+    prefix_dict = json.loads(str_dict)
+
+    # With the DOI prefix we got from the CrossRef search,
+    # look in the prefix_dict to get the corresponding base URL.
+    # The url should be in index 1
+    if len(prefix_dict[doi_prefix]) > 1:
+        pub_url = prefix_dict[doi_prefix][1]
+    else:
+        raise IndexError('The corresponding url is not yet set within prefix_dict')
+
+    print(pub_url)
+
+    # Now search the site_features.csv file to get information relevant to that provider
+    with open('site_features.csv') as f:
+        reader = csv.reader(f)
+        headings = next(reader)  # Save the first line as the headings
+        values = None
+        for row in enumerate(reader):
+            if pub_url in row[1]:
+                values = row[1]  # Once the correct row is found, save it as values
+                break
+
+    # Turn the headings and values into a callable dict
+    pub_dict = dict(zip(headings, values))
+    print(pub_dict)
+
+    # Get the name of the scraper .py file from the dictionary
+    # Import the correct scraper file
+    scrapername = 'pypub.scrapers.' + pub_dict['scraper']
+    scraper = importlib.import_module(scrapername)
+
+    # Construct the correct direct URL from the dictionary
+    full_url = pub_dict['provider_root_url'] + pub_dict['url_prefix'] + str(doi) + pub_dict['article_page_suffix']
+
+    # Call the scraper to get entry info and reference information
+    entry_info = scraper.get_entry_info(full_url)
+    references = scraper.get_references(doi)
+
+    # Make entry into a dict
+    entry_dict = convert_to_dict(entry_info)
+
+    # Make a list of refs as dict objects
+    refs_dicts = []
+    for x in range(len(references)):
+        refs_dicts.append(convert_to_dict(references[x]))
+
+    return(entry_dict, refs_dicts, full_url)
 
 
-# With the DOI prefix we got from the CrossRef search,
-# look in the prefix_dict to get the corresponding base URL.
-# The url should be in index 1
-if len(prefix_dict[doi_prefix]) > 1:
-    pub_url = prefix_dict[doi_prefix][1]
-else:
-    raise IndexError('The corresponding url is not yet set within prefix_dict')
-
-print(pub_url)
+def assign_id():
+    # This function is to assign a unique, program-specific id for file saving
+    idnum = 12345
+    return idnum
 
 
-# Now search the site_features.csv file to get information relevant to that provider
-with open(os.path.dirname(__file__) + '/../site_features.csv') as f:
-    reader = csv.reader(f)
-    headings = next(reader)  # Save the first line as the headings
-    for row in enumerate(reader):
-        if pub_url in row[1]:
-            values = row[1]  # Once the correct row is found, save it as values
-            break
+def get_saved_info(doi):
 
-# Turn the headings and values into a callable dict
-pub_dict = dict(zip(headings, values))
-print(pub_dict)
+    with open('paper_data/doi_list.csv', 'r') as dlist:
+        reader = csv.reader(dlist)
+        saved_id = None
+        for row in reader:
+            if doi == row[0]:
+                saved_id = row[1]
 
-# Get the name of the scraper .py file from the dictionary
-# Import the correct scraper file
-scrapername = 'scrapers.' + pub_dict['scraper']
-scraper = importlib.import_module(scrapername)
-
-# Construct the correct direct URL from the dictionary
-full_url = pub_dict['provider_root_url'] + pub_dict['url_prefix'] + str(doi) + pub_dict['article_page_suffix']
-
-# Call the scraper to get entry info and reference information
-entry_info = scraper.get_entry_info(full_url)
-references = scraper.get_references(doi)
+    if saved_id is not None:
+        filename = '/paper_data/' + str(doi[0:7]) + '/' + saved_id + '.txt.'
+        with open(filename, 'r') as file:
+            wholestring = file.read()
+        return json.loads(wholestring)
+    else:
+        return None
 
 
-print(entry_info)
-print(references[0])
+def log_info(doi, prefix, idnum, entry_dict, refs_dicts, url):
+
+    # First make a folder for DOI prefix if one does not already exist
+    os.makedirs('paper_data/' + str(prefix), exist_ok=True)
+
+    # Log the DOI and corresponding identifying ID number on master CSV file
+    with open('paper_data/doi_list.csv', 'a') as dlist:
+        writer = csv.writer(dlist)
+        writer.writerow([doi, idnum])
+
+    paper_info = {'entry' : entry_dict, 'references' : refs_dicts, 'doi' : str(doi), 'url' : str(url)}
+
+    with open('paper_data/' + str(prefix) + '/' + str(idnum) + '.txt', 'w') as paper:
+        paper.write(json.dumps(paper_info))
+
 
 
 
