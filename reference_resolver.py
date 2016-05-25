@@ -5,10 +5,14 @@ Reference Resolver
 
 Goal:
     Take something like this:
-        Senís, Elena, et al. "CRISPR/Cas9‐mediated genome engineering: An adeno‐associated viral (AAV) vector toolbox."
+        Senís, Elena, et al. "CRISPR/Cas9‐mediated genome engineering:
+        An adeno‐associated viral (AAV) vector toolbox."
         Biotechnology journal 9.11 (2014): 1402-1412.
 
-    and retrieve the entry data and/or that paper's references from the corresponding site where it is hosted.
+    and retrieve the entry data and/or that paper's references from the
+    corresponding site where it is hosted.
+
+    Do the same for a DOI or link.
 
 ------------------
 
@@ -27,67 +31,51 @@ Steps:
 
 """
 
-# The below comment block is copied from crossref.py
-"""
-
-Tools related to crossref (DOIs)
-
-See:
-http://www.crosscite.org/cn/
-http://labs.crossref.org/
-
-
-TODO: List relevant GitHub repos
-
-List is Unfinished:
-- https://github.com/MartinPaulEve/crossRefQuery
-- https://github.com/total-impact/total-impact-core/blob/master/totalimpact/providers/crossref.py
-
-CrossRef Organization:
-https://github.com/CrossRef
-
-===============================================================================
-crossref help
-http://help.crossref.org/#home
-
-crossref SimpleText query:
-----------------------------------
-- http://www.crossref.org/SimpleTextQuery/
-- cut and paste references into the box - returns DOIs
-- requires registered email
-
-OpenURL
-----------------------------------
-- http://help.crossref.org/#using_the_open_url_resolver
--
-
-HTTP
-----------------------------------
-- http://help.crossref.org/#using_http
-
-"""
-
 import sys
 import requests
 import json
 import csv
 import os.path
 import importlib
+import string
+import random
 from pypub.utils import convert_to_dict
+from pypub.publishers.pub_resolve import resolve_link
 
-#TODO: Move this into a compatability module
-#-----------------------------------------------------
-PY2 = sys.version_info.major == 2
-
-if PY2:
-    from urllib import unquote as urllib_unquote
+if sys.version_info.major == 2:
     from urllib import quote as urllib_quote
 else:
-    from urllib.parse import unquote as urllib_unquote
     from urllib.parse import quote as urllib_quote
-#-----------------------------------------------------
+# -----------------------------------------------------
+
+
 
 def resolve_citation(citation):
+    """
+    Gets the paper and references information from
+    a plaintext citation.
+
+    Uses a search to CrossRef.org to retrive paper DOI.
+
+    Parameters
+    ----------
+    citation : str
+        Full journal article citation.
+        Example: Senís, Elena, et al. "CRISPR/Cas9‐mediated genome
+                engineering: An adeno‐associated viral (AAV) vector
+                toolbox. Biotechnology journal 9.11 (2014): 1402-1412.
+
+    Returns
+    -------
+    paper_info : dict
+        Dict containing relevant paper meta-information and
+        references list.
+        Paper info is in 'entry' value, and is in the form of another dict
+        (with str and dict values). References list is in 'references'
+        value and is a list of dicts (each with str and dict values).
+        This is formatted to be JSON-serializable.
+
+    """
     # Encode raw citation
     citation = urllib_quote(citation)
 
@@ -112,15 +100,31 @@ def resolve_citation(citation):
 
     idnum = assign_id()
 
-    log_info(doi, doi_prefix, idnum, entry_dict, refs_dicts, url)
-
     print(doi)
 
-    paper_info = {'entry' : entry_dict, 'references' : refs_dicts, 'doi' : doi, 'url' : url}
+    paper_info = {'entry': entry_dict, 'references': refs_dicts, 'doi': doi, 'url': url}
+    log_info(doi, doi_prefix, idnum, paper_info)
 
     return paper_info
 
+
 def resolve_doi(doi):
+    """
+    Gets the paper and references information from an article DOI.
+
+    Parameters
+    ----------
+    doi : str
+        DOI = digital object identifier.
+        Unique ID assigned to a journal article.
+        Example: 10.1002/biot.201400046
+
+    Returns
+    -------
+    paper_info : dict
+        See resolve_citation for description.
+
+    """
     doi_prefix = doi[0:7]
 
     # Same steps as in resolve_citation
@@ -131,35 +135,49 @@ def resolve_doi(doi):
     [entry_dict, refs_dicts, url] = doi_to_info(doi, doi_prefix)
     idnum = assign_id()
 
-    log_info(doi, doi_prefix, idnum, entry_dict, refs_dicts, url)
-    paper_info = {'entry' : entry_dict, 'references' : refs_dicts, 'doi' : doi, 'url' : url}
+    paper_info = {'entry': entry_dict, 'references': refs_dicts, 'doi': doi, 'url': url}
+    log_info(doi, doi_prefix, idnum, paper_info)
+
     return paper_info
-
-def resolve_link(link):
-
-    # First format the link correctly and determine the publisher
-    # ---------------------
-    # Make sure 'http://' and not 'www.' is at the beginning
-    link = link.replace('www.', '')
-    if link[0:4] != 'http':
-        link = 'http://' + link
-
-    base_url = link[:link.find('.com')+4]
-
-    # Now search the site_features.csv file to get information relevant to that provider
-    with open('site_features.csv') as f:
-        reader = csv.reader(f)
-        headings = next(reader)  # Save the first line as the headings
-        values = None
-        for row in enumerate(reader):
-            if base_url in row[1]:
-                values = row[1]  # Once the correct row is found, save it as values
-                break
-
-    return None
 
 
 def doi_to_info(doi, doi_prefix):
+    """
+    Gets entry and references information for an article DOI.
+
+    Uses saved dicts matching DOI prefixes to publishers and web scrapers
+    to retrieve information. Will fail if DOI prefix hasn't been saved
+    with a publisher link or if a scraper for a specific publisher
+    site hasn't been built.
+
+    Parameters
+    ----------
+    doi : str
+        Unique ID assigned to a journal article.
+    doi_prefix : str
+        The first 7 characters of the DOI above. I.e. 10.XXXX.
+        This prefix is used to identify publisher information.
+
+    Returns
+    -------
+    entry_dict : dict
+        Contains information about the paper referenced by the DOI.
+        Includes title, authors, affiliations, publish date, journal
+        title, volume, and pages, and keywords. Some values are other
+        dicts (for example, the author info with affiliation values).
+        Formatted to be JSON serializable.
+
+    refs_dicts : list of dicts
+        Each list item is a dict corresponding to an individual reference
+        from the article's reference list. Includes title, authors,
+        publishing date, journal title, volume, and pages (if listed),
+        and any external URL links available (i.e. to where it is hosted
+        on other sites, or pdf links).
+
+    full_url : str
+        URL to the journal article page on publisher's website.
+
+    """
 
     # Import current prefix dict
     with open('doi_prefix_dict.txt', 'r') as f:
@@ -210,17 +228,49 @@ def doi_to_info(doi, doi_prefix):
     for x in range(len(references)):
         refs_dicts.append(convert_to_dict(references[x]))
 
-    return(entry_dict, refs_dicts, full_url)
+    return entry_dict, refs_dicts, full_url
 
 
 def assign_id():
-    # This function is to assign a unique, program-specific id for file saving
-    idnum = 12345
+    """
+    Generates an ID string specific to this program and file system
+    to save article information. This is because not all papers will
+    always have a DOI/PubMed ID/etc. so there needs to be a way to
+    save the articles for later local retrieval.
+
+    Returns
+    -------
+    idnum : str
+        Randomly generated alphanumeric string of length 8
+
+    """
+
+    idnum = ''.join(random.SystemRandom().choice(string.ascii_uppercase + string.digits) for _ in range(8))
     return idnum
 
 
 def get_saved_info(doi):
+    """
+    Checks if paper information has previously been saved, and if so,
+    retrieves that information from local files.
 
+    Parameters
+    ----------
+    doi : str
+        Unique ID assigned to a journal article.
+
+    Returns
+    -------
+    json.loads(wholestring) : JSON-formatted dict
+        See Also: resolve_citation. This return value is the same as
+        paper_info, but as a dict, not str.
+
+    """
+    import sys
+    import os
+    sys.path.append(os.path.dirname(__file__))
+    import pdb
+    #pdb.set_trace()
     with open('paper_data/doi_list.csv', 'r') as dlist:
         reader = csv.reader(dlist)
         saved_id = None
@@ -237,7 +287,35 @@ def get_saved_info(doi):
         return None
 
 
-def log_info(doi, prefix, idnum, entry_dict, refs_dicts, url):
+def log_info(doi, prefix, idnum, paper_info):
+    """
+    Saves article information to local files for retrieval.
+
+    Papers from a specific publisher are organized by their DOI prefix.
+    A directory with that prefix name is made if it does not already
+    exist, and a file named using idnum is created, which holds
+    paper_info. In a separate doi_list.csv file, the DOI and its
+    assigned idnum are saved as a tuple so that the information can
+    be found later.
+
+    Parameters
+    ----------
+    doi : str
+        Unique ID assigned to a journal article.
+
+    prefix : str
+        First 7 characters of DOI in format 10.XXXX.
+        Gives publisher information
+
+    idnum : str
+        Random alphanumeric string assigned to article info for
+        local identification and retrieval.
+        See Also: assign_id.
+
+    paper_info : dict
+        See resolve_citation for description.
+
+    """
 
     # First make a folder for DOI prefix if one does not already exist
     os.makedirs('paper_data/' + str(prefix), exist_ok=True)
@@ -247,12 +325,8 @@ def log_info(doi, prefix, idnum, entry_dict, refs_dicts, url):
         writer = csv.writer(dlist)
         writer.writerow([doi, idnum])
 
-    paper_info = {'entry' : entry_dict, 'references' : refs_dicts, 'doi' : str(doi), 'url' : str(url)}
-
     with open('paper_data/' + str(prefix) + '/' + str(idnum) + '.txt', 'w') as paper:
         paper.write(json.dumps(paper_info))
-
-
 
 
 '''
@@ -260,7 +334,6 @@ DOI_SEARCH = 'http://doi.crossref.org/search/doi'
 
 crossref_email = 'jim.hokanson@gmail.com'
 
-#TODO: Support multiple dois ...
 def getMeta(doi, format='unixsd'):
 
     """
