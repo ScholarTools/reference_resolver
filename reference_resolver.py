@@ -35,10 +35,11 @@ import sys
 import requests
 import json
 import csv
-import os.path
 import importlib
 import string
 import random
+import os
+import inspect
 from pypub.utils import convert_to_dict
 from pypub.publishers.pub_resolve import resolve_link
 
@@ -132,10 +133,10 @@ def resolve_doi(doi):
     if saved_info is not None:
         return saved_info
 
-    [entry_dict, refs_dicts, url] = doi_to_info(doi, doi_prefix)
+    [entry_dict, refs_dicts, pdf_link, url] = doi_to_info(doi, doi_prefix)
     idnum = assign_id()
 
-    paper_info = {'entry': entry_dict, 'references': refs_dicts, 'doi': doi, 'url': url}
+    paper_info = {'entry': entry_dict, 'references': refs_dicts, 'pdf_link': pdf_link, 'doi': doi, 'url': url}
     log_info(doi, doi_prefix, idnum, paper_info)
 
     return paper_info
@@ -178,9 +179,12 @@ def doi_to_info(doi, doi_prefix):
         URL to the journal article page on publisher's website.
 
     """
+    current_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+    doi_prefix_file = os.path.join(current_dir, 'doi_prefix_dict.txt')
+    root = os.path.dirname(current_dir)
 
     # Import current prefix dict
-    with open('doi_prefix_dict.txt', 'r') as f:
+    with open(doi_prefix_file, 'r') as f:
         str_dict = f.read()
     prefix_dict = json.loads(str_dict)
 
@@ -190,12 +194,13 @@ def doi_to_info(doi, doi_prefix):
     if len(prefix_dict[doi_prefix]) > 1:
         pub_url = prefix_dict[doi_prefix][1]
     else:
-        raise IndexError('The corresponding url is not yet set within prefix_dict')
+        raise IndexError('The DOI prefix is not yet set assigned to a publisher')
 
-    print(pub_url)
+    #print(pub_url)
 
+    site_features_file = os.path.join(root, 'pypub/pypub/publishers/site_features.csv')
     # Now search the site_features.csv file to get information relevant to that provider
-    with open('site_features.csv') as f:
+    with open(site_features_file) as f:
         reader = csv.reader(f)
         headings = next(reader)  # Save the first line as the headings
         values = None
@@ -206,7 +211,7 @@ def doi_to_info(doi, doi_prefix):
 
     # Turn the headings and values into a callable dict
     pub_dict = dict(zip(headings, values))
-    print(pub_dict)
+    #print(pub_dict)
 
     # Get the name of the scraper .py file from the dictionary
     # Import the correct scraper file
@@ -216,19 +221,28 @@ def doi_to_info(doi, doi_prefix):
     # Construct the correct direct URL from the dictionary
     full_url = pub_dict['provider_root_url'] + pub_dict['url_prefix'] + str(doi) + pub_dict['article_page_suffix']
 
+    # If ScienceDirect, need to get real URL featuring PII
+    # The URLs don't use the DOI
+    if pub_dict['provider_root_url'] == 'http://sciencedirect.com':
+        resp = requests.get('http://dx.doi.org/' + doi)
+        full_url = resp.url
+
+    print(full_url)
+
     # Call the scraper to get entry info and reference information
     entry_info = scraper.get_entry_info(full_url)
-    references = scraper.get_references(doi)
+    references = scraper.get_references(full_url)
+    pdf_link = scraper.get_pdf_link(full_url)
 
     # Make entry into a dict
     entry_dict = convert_to_dict(entry_info)
 
     # Make a list of refs as dict objects
     refs_dicts = []
-    for x in range(len(references)):
-        refs_dicts.append(convert_to_dict(references[x]))
+    for ref in references:
+        refs_dicts.append(convert_to_dict(ref))
 
-    return entry_dict, refs_dicts, full_url
+    return entry_dict, refs_dicts, pdf_link, full_url
 
 
 def assign_id():
@@ -266,12 +280,11 @@ def get_saved_info(doi):
         paper_info, but as a dict, not str.
 
     """
-    import sys
-    import os
-    sys.path.append(os.path.dirname(__file__))
-    import pdb
-    #pdb.set_trace()
-    with open('paper_data/doi_list.csv', 'r') as dlist:
+    current_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+    doi_list_file = os.path.join(current_dir, 'paper_data/doi_list.csv')
+    paper_data_dir = os.path.join(current_dir, 'paper_data/')
+
+    with open(doi_list_file, 'r') as dlist:
         reader = csv.reader(dlist)
         saved_id = None
         for row in reader:
@@ -279,8 +292,9 @@ def get_saved_info(doi):
                 saved_id = row[1]
 
     if saved_id is not None:
-        filename = '/paper_data/' + str(doi[0:7]) + '/' + saved_id + '.txt.'
-        with open(filename, 'r') as file:
+        file_name = str(doi[0:7]) + '/' + saved_id + '.txt'
+        new_file = os.path.join(paper_data_dir, file_name)
+        with open(new_file, 'r') as file:
             wholestring = file.read()
         return json.loads(wholestring)
     else:
@@ -317,15 +331,20 @@ def log_info(doi, prefix, idnum, paper_info):
 
     """
 
+    current_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+    doi_list_file = os.path.join(current_dir, 'paper_data/doi_list.csv')
+    paper_data_dir = os.path.join(current_dir, 'paper_data/')
+
     # First make a folder for DOI prefix if one does not already exist
-    os.makedirs('paper_data/' + str(prefix), exist_ok=True)
+    os.makedirs(os.path.join(paper_data_dir, str(prefix)), exist_ok=True)
 
     # Log the DOI and corresponding identifying ID number on master CSV file
-    with open('paper_data/doi_list.csv', 'a') as dlist:
+    with open(doi_list_file, 'a') as dlist:
         writer = csv.writer(dlist)
         writer.writerow([doi, idnum])
 
-    with open('paper_data/' + str(prefix) + '/' + str(idnum) + '.txt', 'w') as paper:
+    file_name = str(prefix) + '/' + str(idnum) + '.txt'
+    with open(os.path.join(paper_data_dir, file_name), 'w') as paper:
         paper.write(json.dumps(paper_info))
 
 
