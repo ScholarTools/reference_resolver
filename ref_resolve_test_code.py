@@ -5,7 +5,11 @@ citation = 'Senís, Elena, et al. "CRISPR/Cas9‐mediated genome engineering: An
 
 link = 'http://onlinelibrary.wiley.com/doi/10.1002/biot.201400046/references'
 
-paper_info = rr.resolve_citation(citation)
-print(paper_info['entry'])
-print(paper_info['references'][0])
-print(paper_info.keys())
+doi = '10.1002/biot.201400046'
+
+#paper_info = rr.resolve_citation(citation)
+#print(paper_info['entry'])
+#print(paper_info['references'][0])
+#print(paper_info.keys())
+
+paper_info = rr.resolve_doi(doi)

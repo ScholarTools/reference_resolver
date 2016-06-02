@@ -41,7 +41,6 @@ import random
 import os
 import inspect
 from pypub.utils import convert_to_dict
-from pypub.publishers.pub_resolve import resolve_link
 
 if sys.version_info.major == 2:
     from urllib import quote as urllib_quote
@@ -49,6 +48,16 @@ else:
     from urllib.parse import quote as urllib_quote
 # -----------------------------------------------------
 
+
+class PaperInfo:
+    def __init__(self, **kwargs):
+        self.idnum = kwargs.get('idnum')
+        self.entry = kwargs.get('entry_dict')
+        self.references = kwargs.get('refs_dicts')
+        self.doi = kwargs.get('doi')
+        self.doi_prefix = kwargs.get('doi_prefix')
+        self.url = kwargs.get('url')
+        self.pdf_link = kwargs.get('pdf_link')
 
 
 def resolve_citation(citation):
@@ -68,13 +77,13 @@ def resolve_citation(citation):
 
     Returns
     -------
-    paper_info : dict
-        Dict containing relevant paper meta-information and
+    paper_info : PaperInfo
+        Class containing relevant paper meta-information and
         references list.
-        Paper info is in 'entry' value, and is in the form of another dict
+        Information about the paper itself is in 'entry' value, and is a dict
         (with str and dict values). References list is in 'references'
         value and is a list of dicts (each with str and dict values).
-        This is formatted to be JSON-serializable.
+        Must call .__dict__ to be JSON-serializable
 
     """
     # Encode raw citation
@@ -87,7 +96,10 @@ def resolve_citation(citation):
     print(doi)
 
     # If crossref returns a http://dx.doi.org/ link, retrieve the doi from it
+    # and save the URL to pass to doi_to_info
+    url = None
     if doi[0:18] == 'http://dx.doi.org/':
+        url = doi
         doi = doi[18:]
     doi_prefix = doi[0:7]
 
@@ -95,16 +107,20 @@ def resolve_citation(citation):
     # If it has, return saved information
     saved_info = get_saved_info(doi)
     if saved_info is not None:
-        return saved_info
+        saved_paper_info = PaperInfo()
+        for k, v in saved_info.items():
+            setattr(saved_paper_info, k, v)
+        return saved_paper_info
 
-    [entry_dict, refs_dicts, url] = doi_to_info(doi, doi_prefix)
+    paper_info = doi_to_info(doi, doi_prefix, url)
 
     idnum = assign_id()
+    paper_info.idnum = idnum
 
     print(doi)
 
-    paper_info = {'entry': entry_dict, 'references': refs_dicts, 'doi': doi, 'url': url}
-    log_info(doi, doi_prefix, idnum, paper_info)
+    #paper_info = {'entry': entry_dict, 'references': refs_dicts, 'doi': doi, 'url': url}
+    log_info(paper_info)
 
     return paper_info
 
@@ -122,7 +138,7 @@ def resolve_doi(doi):
 
     Returns
     -------
-    paper_info : dict
+    paper_info : PaperInfo
         See resolve_citation for description.
 
     """
@@ -131,18 +147,76 @@ def resolve_doi(doi):
     # Same steps as in resolve_citation
     saved_info = get_saved_info(doi)
     if saved_info is not None:
-        return saved_info
+        saved_paper_info = PaperInfo()
+        for k, v in saved_info.items():
+            setattr(saved_paper_info, k, v)
+        return saved_paper_info
 
-    [entry_dict, refs_dicts, pdf_link, url] = doi_to_info(doi, doi_prefix)
+    paper_info = doi_to_info(doi, doi_prefix)
     idnum = assign_id()
+    paper_info.idnum = idnum
 
-    paper_info = {'entry': entry_dict, 'references': refs_dicts, 'pdf_link': pdf_link, 'doi': doi, 'url': url}
-    log_info(doi, doi_prefix, idnum, paper_info)
+    log_info(paper_info)
 
     return paper_info
 
 
-def doi_to_info(doi, doi_prefix):
+def resolve_link(link):
+    """
+    Gets the paper and references information from a link (URL)
+    to a specific journal article page.
+
+    Parameters
+    ----------
+    link : str
+        URL to journal article page on publisher's website.
+        Example: http://onlinelibrary.wiley.com/doi/10.1002/biot.201400046/references
+
+    Returns
+    -------
+    pub_dict : dict
+        See resolve_citation for description.
+
+    """
+
+    # First format the link correctly and determine the publisher
+    # ---------------------
+    # Make sure 'http://' and not 'www.' is at the beginning
+    link = link.replace('www.', '')
+    if link[0:4] != 'http':
+        link = 'http://' + link
+
+    base_url = link[:link.find('.com')+4]
+
+
+    # Get absolute path to CSV file
+    current_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
+    file_path = os.path.join(current_dir, 'site_features.csv')
+    pub_dict = None
+
+    # Now search the site_features.csv file to get information relevant to that provider
+    with open(file_path) as f:
+        reader = csv.reader(f)
+        headings = next(reader)  # Save the first line as the headings
+        values = None
+        for row in enumerate(reader):
+            if base_url in row[1]:
+                values = row[1]  # Once the correct row is found, save it as values
+                pub_dict = dict(zip(headings, values))
+                break
+
+    if pub_dict is None:
+        raise KeyError('No publisher information found. Publisher is not currently supported.')
+    else:
+        return pub_dict
+
+
+def link_to_doi(link):
+    return_values = resolve_link(link)
+    return return_values
+
+
+def doi_to_info(doi, doi_prefix, url=None):
     """
     Gets entry and references information for an article DOI.
 
@@ -158,9 +232,15 @@ def doi_to_info(doi, doi_prefix):
     doi_prefix : str
         The first 7 characters of the DOI above. I.e. 10.XXXX.
         This prefix is used to identify publisher information.
+    url : str
+        The CrossRef URL to the article page.
+        I.e. http://dx.doi.org/10.######
 
     Returns
     -------
+    paper_info : PaperInfo
+        Class containing parameters including the following:
+
     entry_dict : dict
         Contains information about the paper referenced by the DOI.
         Includes title, authors, affiliations, publish date, journal
@@ -179,10 +259,12 @@ def doi_to_info(doi, doi_prefix):
         URL to the journal article page on publisher's website.
 
     """
+
     current_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
     doi_prefix_file = os.path.join(current_dir, 'doi_prefix_dict.txt')
     root = os.path.dirname(current_dir)
 
+    '''
     # Import current prefix dict
     with open(doi_prefix_file, 'r') as f:
         str_dict = f.read()
@@ -197,6 +279,18 @@ def doi_to_info(doi, doi_prefix):
         raise IndexError('The DOI prefix is not yet set assigned to a publisher')
 
     #print(pub_url)
+    '''
+
+    # Get or make CrossRef link, then follow it to get article URL
+    if url:
+        resp = requests.get(url)
+        pub_url = resp.url
+    else:
+        resp = requests.get('http://dx.doi.org/' + doi)
+        pub_url = resp.url
+
+    end_index = pub_url.find('.com') + 4
+    base_url = pub_url[:end_index]
 
     site_features_file = os.path.join(root, 'pypub/pypub/publishers/site_features.csv')
     # Now search the site_features.csv file to get information relevant to that provider
@@ -205,19 +299,27 @@ def doi_to_info(doi, doi_prefix):
         headings = next(reader)  # Save the first line as the headings
         values = None
         for row in enumerate(reader):
-            if pub_url in row[1]:
-                values = row[1]  # Once the correct row is found, save it as values
+            if base_url in row[1]:
+                # Once the correct row is found, save it as values
+                # The [1] here is needed because row is a list where
+                # the first value is the row number and the second is
+                # the entire list of headings.
+                values = row[1]
                 break
+
+    if values is None:
+        raise IndexError('No scraper is yet implemented for this publisher')
 
     # Turn the headings and values into a callable dict
     pub_dict = dict(zip(headings, values))
-    #print(pub_dict)
+    print(pub_dict)
 
     # Get the name of the scraper .py file from the dictionary
     # Import the correct scraper file
     scrapername = 'pypub.scrapers.' + pub_dict['scraper']
     scraper = importlib.import_module(scrapername)
 
+    '''
     # Construct the correct direct URL from the dictionary
     full_url = pub_dict['provider_root_url'] + pub_dict['url_prefix'] + str(doi) + pub_dict['article_page_suffix']
 
@@ -226,13 +328,14 @@ def doi_to_info(doi, doi_prefix):
     if pub_dict['provider_root_url'] == 'http://sciencedirect.com':
         resp = requests.get('http://dx.doi.org/' + doi)
         full_url = resp.url
+    '''
 
-    print(full_url)
+    #print(pub_url)
 
     # Call the scraper to get entry info and reference information
-    entry_info = scraper.get_entry_info(full_url)
-    references = scraper.get_references(full_url)
-    pdf_link = scraper.get_pdf_link(full_url)
+    entry_info = scraper.get_entry_info(pub_url)
+    references = scraper.get_references(pub_url)
+    pdf_link = scraper.get_pdf_link(pub_url)
 
     # Make entry into a dict
     entry_dict = convert_to_dict(entry_info)
@@ -242,7 +345,9 @@ def doi_to_info(doi, doi_prefix):
     for ref in references:
         refs_dicts.append(convert_to_dict(ref))
 
-    return entry_dict, refs_dicts, pdf_link, full_url
+    paper_info = PaperInfo(entry_dict=entry_dict, refs_dicts=refs_dicts, pdf_link=pdf_link, url=pub_url, doi=doi, doi_prefix=doi_prefix)
+
+    return paper_info
 
 
 def assign_id():
@@ -301,7 +406,7 @@ def get_saved_info(doi):
         return None
 
 
-def log_info(doi, prefix, idnum, paper_info):
+def log_info(paper_info):
     """
     Saves article information to local files for retrieval.
 
@@ -314,19 +419,7 @@ def log_info(doi, prefix, idnum, paper_info):
 
     Parameters
     ----------
-    doi : str
-        Unique ID assigned to a journal article.
-
-    prefix : str
-        First 7 characters of DOI in format 10.XXXX.
-        Gives publisher information
-
-    idnum : str
-        Random alphanumeric string assigned to article info for
-        local identification and retrieval.
-        See Also: assign_id.
-
-    paper_info : dict
+    paper_info : PaperInfo
         See resolve_citation for description.
 
     """
@@ -336,16 +429,16 @@ def log_info(doi, prefix, idnum, paper_info):
     paper_data_dir = os.path.join(current_dir, 'paper_data/')
 
     # First make a folder for DOI prefix if one does not already exist
-    os.makedirs(os.path.join(paper_data_dir, str(prefix)), exist_ok=True)
+    os.makedirs(os.path.join(paper_data_dir, str(paper_info.doi_prefix)), exist_ok=True)
 
     # Log the DOI and corresponding identifying ID number on master CSV file
     with open(doi_list_file, 'a') as dlist:
         writer = csv.writer(dlist)
-        writer.writerow([doi, idnum])
+        writer.writerow([paper_info.doi, paper_info.idnum])
 
-    file_name = str(prefix) + '/' + str(idnum) + '.txt'
+    file_name = str(paper_info.doi_prefix) + '/' + str(paper_info.idnum) + '.txt'
     with open(os.path.join(paper_data_dir, file_name), 'w') as paper:
-        paper.write(json.dumps(paper_info))
+        paper.write(json.dumps(paper_info.__dict__))
 
 
 '''
