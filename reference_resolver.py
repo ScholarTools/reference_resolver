@@ -41,6 +41,7 @@ import random
 import os
 import inspect
 from pypub.utils import convert_to_dict
+from reference_resolver_errors import *
 
 if sys.version_info.major == 2:
     from urllib import quote as urllib_quote
@@ -58,6 +59,7 @@ class PaperInfo:
         self.doi_prefix = kwargs.get('doi_prefix')
         self.url = kwargs.get('url')
         self.pdf_link = kwargs.get('pdf_link')
+        self.scraper_obj = kwargs.get('scraper_obj')
 
 
 def resolve_citation(citation):
@@ -119,7 +121,6 @@ def resolve_citation(citation):
 
     print(doi)
 
-    #paper_info = {'entry': entry_dict, 'references': refs_dicts, 'doi': doi, 'url': url}
     log_info(paper_info)
 
     return paper_info
@@ -206,7 +207,7 @@ def resolve_link(link):
                 break
 
     if pub_dict is None:
-        raise KeyError('No publisher information found. Publisher is not currently supported.')
+        raise UnsupportedPublisherError('No publisher information found. Publisher is not currently supported.')
     else:
         return pub_dict
 
@@ -276,13 +277,13 @@ def doi_to_info(doi, doi_prefix, url=None):
     if len(prefix_dict[doi_prefix]) > 1:
         pub_url = prefix_dict[doi_prefix][1]
     else:
-        raise IndexError('The DOI prefix is not yet set assigned to a publisher')
+        raise UnsupportedPublisherError('The DOI prefix is not yet set assigned to a publisher')
 
     #print(pub_url)
     '''
 
     # Get or make CrossRef link, then follow it to get article URL
-    if url:
+    if url is not None:
         resp = requests.get(url)
         pub_url = resp.url
     else:
@@ -291,6 +292,7 @@ def doi_to_info(doi, doi_prefix, url=None):
 
     end_index = pub_url.find('.com') + 4
     base_url = pub_url[:end_index]
+    base_url = base_url.replace('www.', '')
 
     site_features_file = os.path.join(root, 'pypub/pypub/publishers/site_features.csv')
     # Now search the site_features.csv file to get information relevant to that provider
@@ -308,7 +310,7 @@ def doi_to_info(doi, doi_prefix, url=None):
                 break
 
     if values is None:
-        raise IndexError('No scraper is yet implemented for this publisher')
+        raise UnsupportedPublisherError('No scraper is yet implemented for this publisher')
 
     # Turn the headings and values into a callable dict
     pub_dict = dict(zip(headings, values))
@@ -318,17 +320,6 @@ def doi_to_info(doi, doi_prefix, url=None):
     # Import the correct scraper file
     scrapername = 'pypub.scrapers.' + pub_dict['scraper']
     scraper = importlib.import_module(scrapername)
-
-    '''
-    # Construct the correct direct URL from the dictionary
-    full_url = pub_dict['provider_root_url'] + pub_dict['url_prefix'] + str(doi) + pub_dict['article_page_suffix']
-
-    # If ScienceDirect, need to get real URL featuring PII
-    # The URLs don't use the DOI
-    if pub_dict['provider_root_url'] == 'http://sciencedirect.com':
-        resp = requests.get('http://dx.doi.org/' + doi)
-        full_url = resp.url
-    '''
 
     #print(pub_url)
 
@@ -345,7 +336,11 @@ def doi_to_info(doi, doi_prefix, url=None):
     for ref in references:
         refs_dicts.append(convert_to_dict(ref))
 
-    paper_info = PaperInfo(entry_dict=entry_dict, refs_dicts=refs_dicts, pdf_link=pdf_link, url=pub_url, doi=doi, doi_prefix=doi_prefix)
+    # Get scraper object name
+    scraper_obj = pub_dict['object']
+
+    paper_info = PaperInfo(entry_dict=entry_dict, refs_dicts=refs_dicts, pdf_link=pdf_link, url=pub_url,
+                           doi=doi, doi_prefix=doi_prefix, scraper_obj=scraper_obj)
 
     return paper_info
 
