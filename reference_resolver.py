@@ -30,36 +30,31 @@ Steps:
     5) Return info
 
 """
-
+# Standard imports
 import sys
-import requests
+import os
 import json
 import csv
 import importlib
 import string
 import random
-import os
 import inspect
-from pypub.utils import convert_to_dict
+
+# Third party imports
+import requests
+
+# Local imports
+import pypub.utils as utils
 from reference_resolver_errors import *
+from pypub.paper_info import PaperInfo
+import pypub.publishers.pub_resolve as pub_resolve
+
 
 if sys.version_info.major == 2:
     from urllib import quote as urllib_quote
 else:
     from urllib.parse import quote as urllib_quote
 # -----------------------------------------------------
-
-
-class PaperInfo:
-    def __init__(self, **kwargs):
-        self.idnum = kwargs.get('idnum')
-        self.entry = kwargs.get('entry_dict')
-        self.references = kwargs.get('refs_dicts')
-        self.doi = kwargs.get('doi')
-        self.doi_prefix = kwargs.get('doi_prefix')
-        self.url = kwargs.get('url')
-        self.pdf_link = kwargs.get('pdf_link')
-        self.scraper_obj = kwargs.get('scraper_obj')
 
 
 def resolve_citation(citation):
@@ -112,14 +107,13 @@ def resolve_citation(citation):
         saved_paper_info = PaperInfo()
         for k, v in saved_info.items():
             setattr(saved_paper_info, k, v)
+        saved_paper_info.make_interface_object()
         return saved_paper_info
 
     paper_info = doi_to_info(doi, doi_prefix, url)
 
     idnum = assign_id()
     paper_info.idnum = idnum
-
-    print(doi)
 
     log_info(paper_info)
 
@@ -151,9 +145,12 @@ def resolve_doi(doi):
         saved_paper_info = PaperInfo()
         for k, v in saved_info.items():
             setattr(saved_paper_info, k, v)
+        saved_paper_info.make_interface_object()
         return saved_paper_info
 
-    paper_info = doi_to_info(doi, doi_prefix)
+
+
+    paper_info = doi_to_info(doi)
     idnum = assign_id()
     paper_info.idnum = idnum
 
@@ -189,27 +186,7 @@ def resolve_link(link):
 
     base_url = link[:link.find('.com')+4]
 
-
-    # Get absolute path to CSV file
-    current_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-    file_path = os.path.join(current_dir, 'site_features.csv')
-    pub_dict = None
-
-    # Now search the site_features.csv file to get information relevant to that provider
-    with open(file_path) as f:
-        reader = csv.reader(f)
-        headings = next(reader)  # Save the first line as the headings
-        values = None
-        for row in enumerate(reader):
-            if base_url in row[1]:
-                values = row[1]  # Once the correct row is found, save it as values
-                pub_dict = dict(zip(headings, values))
-                break
-
-    if pub_dict is None:
-        raise UnsupportedPublisherError('No publisher information found. Publisher is not currently supported.')
-    else:
-        return pub_dict
+    return pub_resolve.get_publisher_site_info(base_url=base_url)
 
 
 def link_to_doi(link):
@@ -217,7 +194,7 @@ def link_to_doi(link):
     return return_values
 
 
-def doi_to_info(doi, doi_prefix, url=None):
+def doi_to_info(doi=None, url=None):
     """
     Gets entry and references information for an article DOI.
 
@@ -230,9 +207,6 @@ def doi_to_info(doi, doi_prefix, url=None):
     ----------
     doi : str
         Unique ID assigned to a journal article.
-    doi_prefix : str
-        The first 7 characters of the DOI above. I.e. 10.XXXX.
-        This prefix is used to identify publisher information.
     url : str
         The CrossRef URL to the article page.
         I.e. http://dx.doi.org/10.######
@@ -242,105 +216,31 @@ def doi_to_info(doi, doi_prefix, url=None):
     paper_info : PaperInfo
         Class containing parameters including the following:
 
-    entry_dict : dict
-        Contains information about the paper referenced by the DOI.
-        Includes title, authors, affiliations, publish date, journal
-        title, volume, and pages, and keywords. Some values are other
-        dicts (for example, the author info with affiliation values).
-        Formatted to be JSON serializable.
+        entry_dict : dict
+            Contains information about the paper referenced by the DOI.
+            Includes title, authors, affiliations, publish date, journal
+            title, volume, and pages, and keywords. Some values are other
+            dicts (for example, the author info with affiliation values).
+            Formatted to be JSON serializable.
 
-    refs_dicts : list of dicts
-        Each list item is a dict corresponding to an individual reference
-        from the article's reference list. Includes title, authors,
-        publishing date, journal title, volume, and pages (if listed),
-        and any external URL links available (i.e. to where it is hosted
-        on other sites, or pdf links).
+        refs_dicts : list of dicts
+            Each list item is a dict corresponding to an individual reference
+            from the article's reference list. Includes title, authors,
+            publishing date, journal title, volume, and pages (if listed),
+            and any external URL links available (i.e. to where it is hosted
+            on other sites, or pdf links).
 
-    full_url : str
-        URL to the journal article page on publisher's website.
+        full_url : str
+            URL to the journal article page on publisher's website.
 
     """
+    # Resolve DOI or URL through PyPub pub_resolve methods
+    publisher_base_url, full_url = pub_resolve.get_publisher_urls(doi=doi, url=url)
+    pub_dict = pub_resolve.get_publisher_site_info(publisher_base_url)
 
-    current_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-    doi_prefix_file = os.path.join(current_dir, 'doi_prefix_dict.txt')
-    root = os.path.dirname(current_dir)
-
-    '''
-    # Import current prefix dict
-    with open(doi_prefix_file, 'r') as f:
-        str_dict = f.read()
-    prefix_dict = json.loads(str_dict)
-
-    # With the DOI prefix we got from the CrossRef search,
-    # look in the prefix_dict to get the corresponding base URL.
-    # The url should be in index 1
-    if len(prefix_dict[doi_prefix]) > 1:
-        pub_url = prefix_dict[doi_prefix][1]
-    else:
-        raise UnsupportedPublisherError('The DOI prefix is not yet set assigned to a publisher')
-
-    #print(pub_url)
-    '''
-
-    # Get or make CrossRef link, then follow it to get article URL
-    if url is not None:
-        resp = requests.get(url)
-        pub_url = resp.url
-    else:
-        resp = requests.get('http://dx.doi.org/' + doi)
-        pub_url = resp.url
-
-    end_index = pub_url.find('.com') + 4
-    base_url = pub_url[:end_index]
-    base_url = base_url.replace('www.', '')
-
-    site_features_file = os.path.join(root, 'pypub/pypub/publishers/site_features.csv')
-    # Now search the site_features.csv file to get information relevant to that provider
-    with open(site_features_file) as f:
-        reader = csv.reader(f)
-        headings = next(reader)  # Save the first line as the headings
-        values = None
-        for row in enumerate(reader):
-            if base_url in row[1]:
-                # Once the correct row is found, save it as values
-                # The [1] here is needed because row is a list where
-                # the first value is the row number and the second is
-                # the entire list of headings.
-                values = row[1]
-                break
-
-    if values is None:
-        raise UnsupportedPublisherError('No scraper is yet implemented for this publisher')
-
-    # Turn the headings and values into a callable dict
-    pub_dict = dict(zip(headings, values))
-    print(pub_dict)
-
-    # Get the name of the scraper .py file from the dictionary
-    # Import the correct scraper file
-    scrapername = 'pypub.scrapers.' + pub_dict['scraper']
-    scraper = importlib.import_module(scrapername)
-
-    #print(pub_url)
-
-    # Call the scraper to get entry info and reference information
-    entry_info = scraper.get_entry_info(pub_url)
-    references = scraper.get_references(pub_url)
-    pdf_link = scraper.get_pdf_link(pub_url)
-
-    # Make entry into a dict
-    entry_dict = convert_to_dict(entry_info)
-
-    # Make a list of refs as dict objects
-    refs_dicts = []
-    for ref in references:
-        refs_dicts.append(convert_to_dict(ref))
-
-    # Get scraper object name
-    scraper_obj = pub_dict['object']
-
-    paper_info = PaperInfo(entry_dict=entry_dict, refs_dicts=refs_dicts, pdf_link=pdf_link, url=pub_url,
-                           doi=doi, doi_prefix=doi_prefix, scraper_obj=scraper_obj)
+    # Create a PaperInfo object to hold all information and call appropriate scraper
+    paper_info = PaperInfo(doi=doi, scraper_obj=pub_dict['object'], url=full_url)
+    paper_info.populate_info()
 
     return paper_info
 
@@ -432,8 +332,16 @@ def log_info(paper_info):
         writer.writerow([paper_info.doi, paper_info.idnum])
 
     file_name = str(paper_info.doi_prefix) + '/' + str(paper_info.idnum) + '.txt'
+
+    # Create dict of relevant information from paper_info
+    pi_dict = dict()
+    pi_dict['entry'] = paper_info.entry
+    pi_dict['references'] = paper_info.references
+    pi_dict['doi'] = paper_info.doi
+    pi_dict['scraper_obj'] = paper_info.scraper_obj
+
     with open(os.path.join(paper_data_dir, file_name), 'w') as paper:
-        paper.write(json.dumps(paper_info.__dict__))
+        paper.write(json.dumps(pi_dict))
 
 
 '''
