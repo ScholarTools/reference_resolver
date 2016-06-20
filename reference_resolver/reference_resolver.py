@@ -31,21 +31,19 @@ Steps:
 
 """
 # Standard imports
-import sys
-import os
-import json
 import csv
-import importlib
-import string
-import random
 import inspect
+import json
+import string
+import sys
+
+import os
+import random
 
 # Third party imports
 import requests
 
 # Local imports
-import pypub.utils as utils
-from reference_resolver_errors import *
 from pypub.paper_info import PaperInfo
 import pypub.publishers.pub_resolve as pub_resolve
 
@@ -281,8 +279,9 @@ def get_saved_info(doi):
 
     """
     current_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-    doi_list_file = os.path.join(current_dir, 'paper_data/doi_list.csv')
-    paper_data_dir = os.path.join(current_dir, 'paper_data/')
+    root_dir = os.path.dirname(current_dir)
+    doi_list_file = os.path.join(root_dir, 'paper_data/doi_list.csv')
+    paper_data_dir = os.path.join(root_dir, 'paper_data/')
 
     with open(doi_list_file, 'r') as dlist:
         reader = csv.reader(dlist)

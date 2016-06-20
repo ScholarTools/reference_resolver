@@ -1,4 +1,4 @@
-import reference_resolver as rr
+from reference_resolver import reference_resolver as rr
 
 citation = 'Senís, Elena, et al. "CRISPR/Cas9‐mediated genome engineering: An adeno‐associated viral (AAV) vector ' + \
            'toolbox. Biotechnology journal 9.11 (2014): 1402-1412.'
