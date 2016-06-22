@@ -16,20 +16,44 @@ class RefMapping(Base):
     __tablename__ = 'ref_mapping'
 
     id = sql.Column(sql.INTEGER, primary_key=True)
-    original_paper = sql.Column(sql.INTEGER)
-    ref_paper = sql.Column(sql.INTEGER)
+    main_paper_id = sql.Column(sql.INTEGER)
+    ref_paper_id = sql.Column(sql.INTEGER)
     ordering = sql.Column(sql.INTEGER)
 
     def __repr__(self):
         return "<RefMapping(\noriginal_paper='%d', \nref_paper='%d'\n)>" % (self.original_paper, self.ref_paper)
 
 
-# TODO: make a standard references class and make/populate the fields of this table
+class MainPaperInfo(Base):
+    __tablename__ = 'main_paper_info'
+
+    id = sql.Column(sql.INTEGER, primary_key=True)
+    ref_table_id = sql.Column(sql.INTEGER)
+
+    doi = sql.Column(sql.VARCHAR)
+    doi_prefix = sql.Column(sql.VARCHAR)
+    title = sql.Column(sql.VARCHAR)
+    publication = sql.Column(sql.VARCHAR)
+    date = sql.Column(sql.VARCHAR)
+    year = sql.Column(sql.VARCHAR)
+    volume = sql.Column(sql.VARCHAR)
+    issue = sql.Column(sql.VARCHAR)
+    pages = sql.Column(sql.VARCHAR)
+    keywords = sql.Column(sql.VARCHAR)
+    abstract = sql.Column(sql.VARCHAR)
+    affiliations = sql.Column(sql.VARCHAR)
+    url = sql.Column(sql.VARCHAR)
+    pdf_link = sql.Column(sql.VARCHAR)
+    scraper_obj = sql.Column(sql.VARCHAR)
+    contact_info = sql.Column(sql.VARCHAR)
+    authors = sql.Column(sql.VARCHAR)
+
+
 class References(Base):
     __tablename__ = 'references'
 
     id = sql.Column(sql.INTEGER, primary_key=True)
-    paper_id = sql.Column(sql.INTEGER)
+    main_table_id = sql.Column(sql.INTEGER)
 
     # Initialize standard reference information
     ref_id = sql.Column(sql.INTEGER)
@@ -58,4 +82,4 @@ class References(Base):
     aps_full_text = sql.Column(sql.VARCHAR)
 
     # Make a timestamp
-    timestamp = sql.Column(sql.VARCHAR)
+    timestamp = sql.Column(sql.TIMESTAMP)

@@ -36,24 +36,22 @@ import inspect
 import json
 import string
 import sys
-
 import os
 import random
+if sys.version_info.major == 2:
+    from urllib import quote as urllib_quote
+else:
+    from urllib.parse import quote as urllib_quote
 
 # Third party imports
 import requests
-import sqlite3
 import sqlalchemy
 
 # Local imports
 from pypub.paper_info import PaperInfo
 import pypub.publishers.pub_resolve as pub_resolve
 
-
-if sys.version_info.major == 2:
-    from urllib import quote as urllib_quote
-else:
-    from urllib.parse import quote as urllib_quote
+from database.db_logging import *
 # -----------------------------------------------------
 
 
@@ -145,6 +143,8 @@ def resolve_doi(doi):
         saved_paper_info = PaperInfo()
         for k, v in saved_info.items():
             setattr(saved_paper_info, k, v)
+        import pdb
+        pdb.set_trace()
         saved_paper_info.make_interface_object()
         return saved_paper_info
 
@@ -262,7 +262,7 @@ def assign_id():
     idnum = ''.join(random.SystemRandom().choice(string.ascii_uppercase + string.digits) for _ in range(8))
     return idnum
 
-
+'''
 def get_saved_info(doi):
     """
     Checks if paper information has previously been saved, and if so,
@@ -343,7 +343,7 @@ def log_info(paper_info):
 
     with open(os.path.join(paper_data_dir, file_name), 'w') as paper:
         paper.write(json.dumps(pi_dict))
-
+'''
 
 '''
 DOI_SEARCH = 'http://doi.crossref.org/search/doi'
