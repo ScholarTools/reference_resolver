@@ -140,13 +140,15 @@ def resolve_doi(doi):
     # Same steps as in resolve_citation
     saved_info = get_saved_info(doi)
     if saved_info is not None:
+        '''
         saved_paper_info = PaperInfo()
         for k, v in saved_info.items():
             setattr(saved_paper_info, k, v)
         import pdb
         pdb.set_trace()
-        saved_paper_info.make_interface_object()
-        return saved_paper_info
+        '''
+        saved_info.make_interface_object()
+        return saved_info
 
 
 

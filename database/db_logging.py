@@ -3,50 +3,44 @@ import datetime
 
 # Third party imports
 import sqlalchemy as sql
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy import types
 
 # Local imports
 from reference_resolver.rr_errors import *
 import database.db_tables as tables
-
-# TODO: put this somewhere/organize this better
-engine = sql.create_engine('sqlite:///papers.db', echo=True)
-
-# Note on Sessions: http://docs.sqlalchemy.org/en/latest/orm/session_basics.html#session-faq-whentocreate
-Session = sessionmaker(bind=engine)
-session = Session()
-
-# Create the tables
-# So far this includes (ClassName (table_name))
-#   RefMapping (ref_mapping)
-#   References (references)
-#   MainPaperInfo (main_paper_info)
-tables.Base.metadata.create_all(engine)
+from database import Session
+from pypub.paper_info import PaperInfo
+from pypub.scrapers.base_objects import *
 
 
-# TODO: Update this whole function
-# Fetch the information from each table and return an object
 def get_saved_info(doi):
     # Start a new Session
     session = Session()
 
     # Get papers with the requested DOI
     # This should only be 1
-    results = session.query(tables.MainPaperInfo).filter_by(doi=doi).all()
-    if len(results) > 1:
+    main_results = session.query(tables.MainPaperInfo).filter_by(doi=doi).all()
+    if len(main_results) > 1:
         raise DatabaseError('Multiple papers with the same DOI found')
+    elif len(main_results) == 0:
+        return None
+
+    main_paper = main_results[0]
+    main_id = main_paper.id
+
+    # Get author information
+    authors = session.query(tables.Authors).filter_by(main_paper_id=main_id).all()
+
+    # Get references for the main paper
+    refs = session.query(tables.References).join(tables.RefMapping).\
+        filter(tables.RefMapping.main_paper_id == main_id).all()
+
+    # Make into a PaperInfo object
+    saved_paper_info = _create_paper_info_from_saved(main_paper=main_paper, authors=authors, refs=refs)
 
     # Close Session
     session.close()
 
-    # TODO: update this
-    # Make sure there is only one returned
-    if len(results) == 1:
-        return results[0]
-    else:
-        return None
+    return saved_paper_info
 
 
 def log_info(paper_info):
@@ -64,26 +58,37 @@ def log_info(paper_info):
     main_entry = _create_entry_table_obj(paper_info)
 
     # Check if this paper has already been referenced and is in the references table
-    ref_table_id = _fetch_id(tables.References, doi=doi, title=main_entry.title)
+    ref_table_id = _fetch_id(session=session, table_name=tables.References, doi=doi, title=main_entry.title)
 
     main_entry.ref_table_id = ref_table_id
 
     # Add main entry to the table
     session.add(main_entry)
 
+    # Get primary key for main entry
+    session.flush()
+    session.refresh(main_entry)
+    main_paper_id = main_entry.id
+
+    # Add author information to author database
+    entry = paper_info.entry
+    if entry is not None:
+        for a in entry.get('authors'):
+            db_author_entry = _create_author_table_obj(main_paper_id=main_paper_id, author=a)
+            session.add(db_author_entry)
+
     # Add each reference to the references table
     refs = paper_info.references
     ref_list = []
     for ref in refs:
         db_ref_entry = _create_ref_table_obj(ref)
-        main_table_id = _fetch_id(tables.MainPaperInfo, doi=db_ref_entry.doi, title=db_ref_entry.title)
+        main_table_id = _fetch_id(session=session, table_name=tables.MainPaperInfo, doi=db_ref_entry.doi,
+                                  title=db_ref_entry.title)
         db_ref_entry.main_table_id = main_table_id
         ref_list.append(db_ref_entry)
         session.add(db_ref_entry)
 
-    session.refresh(main_entry)
-
-    main_paper_id = main_entry.id
+    session.flush()
 
     # Refresh the session so that the primary keys can be retrieved
     # Then extract the IDs
@@ -98,9 +103,15 @@ def log_info(paper_info):
         session.add(db_map_obj)
         order += 1
 
-    # Flush and close the session
-    session.flush()
-    session.close()
+    # Commit and close the session
+    try:
+        session.commit()
+    except:
+        session.rollback()
+        raise DatabaseError('Error encountered while committing to database. '
+                            'Most recent information may not have been saved.')
+    finally:
+        session.close()
 
 
 def _create_entry_table_obj(paper_info):
@@ -111,26 +122,9 @@ def _create_entry_table_obj(paper_info):
     if entry.get('keywords') is not None:
         keywords = ', '.join(entry.get('keywords'))
 
-    author_list = entry.get('authors')
-    author_names = []
-    affiliations = []
-    contact_info = None
-    for author in author_list:
-        if author.get('email') is not None:
-            contact_info = author.get('email')
-        author_names.append(author.get('name'))
-        affs = author.get('affiliations')
-        if affs is not None:
-            for a in affs:
-                if a not in affiliations:
-                    affiliations.append(a)
-
     db_entry = tables.MainPaperInfo(
         # Get attributes of the paper_info.entry field
         title = entry.get('title'),
-        authors = ', '.join(author_names),
-        affiliations = '; '.join(affiliations),
-        contact_info = contact_info,
         keywords = keywords,
         publication = entry.get('publication'),
         date = entry.get('date'),
@@ -199,7 +193,25 @@ def _create_mapping_table_obj(main_paper_id, ref_paper_id, ordering):
     return db_map_entry
 
 
-def _fetch_id(table_name, doi, title):
+def _create_author_table_obj(main_paper_id, author):
+    affs = author.get('affiliations')
+    affiliations = None
+    if affs is not None:
+        if isinstance(affs, list):
+            affiliations = '; '.join(affs)
+        else:
+            affiliations = affs
+
+    db_author_entry = tables.Authors(
+        main_paper_id = main_paper_id,
+        name = author.get('name'),
+        affiliations = affiliations,
+        email = author.get('email')
+    )
+    return db_author_entry
+
+
+def _fetch_id(session, table_name, doi, title):
     """
     For a given paper, it looks to see if it already exists in a table
     'table_name' and if so, returns the primary key of its entry in that table.
@@ -230,3 +242,58 @@ def _fetch_id(table_name, doi, title):
         primary_id = doi_check[0].id
 
     return primary_id
+
+
+def _create_paper_info_from_saved(main_paper, authors, refs):
+    """
+    Parameters
+    ----------
+    main_paper : list of tables.Paper objects
+    authors : list of tables.Authors objects
+    refs : list of tables.References objects
+
+    Returns
+    -------
+
+    """
+    saved_info = PaperInfo()
+
+    # Create entry information and PaperInfo attributes
+    entry_obj = BaseEntry()
+    md = main_paper.__dict__
+    for k, v in md.items():
+        if k == '_sa_instance_state':
+            pass
+        elif k == 'doi':
+            setattr(saved_info, k, v)
+            setattr(entry_obj, k, v)
+        elif k in ('doi_prefix', 'url', 'pdf_link', 'scraper_obj'):
+            setattr(saved_info, k, v)
+        else:
+            setattr(entry_obj, k, v)
+
+    # Get authors
+    author_list = []
+    for author in authors:
+        a = BaseAuthor()
+        a.name = author.name
+        a.affiliations = author.affiliations
+        a.email = author.email
+        author_list.append(a)
+
+    # Add author_list to entry_obj, then add entry to saved_info
+    entry_obj.authors = author_list
+    saved_info.entry = entry_obj
+
+    # Create references list
+    references = []
+    for ref in refs:
+        rd = ref.__dict__
+        ref_obj = BaseRef()
+        for k, v in rd.items():
+            if k not in ('timestamp', '_sa_instance_state'):
+                setattr(ref_obj, k, v)
+        references.append(ref_obj)
+    saved_info.references = references
+
+    return saved_info

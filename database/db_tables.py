@@ -5,7 +5,6 @@ from sqlalchemy.ext.declarative import declarative_base
 Base = declarative_base()
 
 
-# TODO: figure out the best way to assign unique IDs to papers without collisions
 class RefMapping(Base):
     """
     This table keeps track of paper references.
@@ -16,12 +15,12 @@ class RefMapping(Base):
     __tablename__ = 'ref_mapping'
 
     id = sql.Column(sql.INTEGER, primary_key=True)
-    main_paper_id = sql.Column(sql.INTEGER)
-    ref_paper_id = sql.Column(sql.INTEGER)
+    main_paper_id = sql.Column(sql.INTEGER, sql.ForeignKey('main_paper_info.id'))
+    ref_paper_id = sql.Column(sql.INTEGER, sql.ForeignKey('references.id'))
     ordering = sql.Column(sql.INTEGER)
 
     def __repr__(self):
-        return "<RefMapping(\noriginal_paper='%d', \nref_paper='%d'\n)>" % (self.original_paper, self.ref_paper)
+        return "<RefMapping(original_paper='%d', ref_paper='%d')>" % (self.main_paper_id, self.ref_paper_id)
 
 
 class MainPaperInfo(Base):
@@ -41,12 +40,34 @@ class MainPaperInfo(Base):
     pages = sql.Column(sql.VARCHAR)
     keywords = sql.Column(sql.VARCHAR)
     abstract = sql.Column(sql.VARCHAR)
-    affiliations = sql.Column(sql.VARCHAR)
     url = sql.Column(sql.VARCHAR)
     pdf_link = sql.Column(sql.VARCHAR)
     scraper_obj = sql.Column(sql.VARCHAR)
-    contact_info = sql.Column(sql.VARCHAR)
-    authors = sql.Column(sql.VARCHAR)
+
+    def __repr__(self):
+        return u'' + \
+        '      title: %s\n' % self.title + \
+        '    authors: %s\n' % self.authors + \
+        '   keywords: %s\n' % self.keywords + \
+        'publication: %s\n' % self.publication + \
+        '       date: %s\n' % self.date + \
+        '        year %s\n' % self.year + \
+        '     volume: %s\n' % self.volume + \
+        '      issue: %s\n' % self.issue + \
+        '      pages: %s\n' % self.pages + \
+        '        doi: %s\n' % self.doi + \
+        '         url %s\n' % self.url + \
+        '    pdf_link %s\n' % self.pdf_link
+
+
+class Authors(Base):
+    __tablename__ = 'authors'
+
+    id = sql.Column(sql.INTEGER, primary_key=True)
+    main_paper_id = sql.Column(sql.INTEGER, sql.ForeignKey('main_paper_info.id'))
+    name = sql.Column(sql.VARCHAR)
+    affiliations = sql.Column(sql.VARCHAR)
+    email = sql.Column(sql.VARCHAR)
 
 
 class References(Base):
@@ -83,3 +104,18 @@ class References(Base):
 
     # Make a timestamp
     timestamp = sql.Column(sql.TIMESTAMP)
+
+    def __repr__(self):
+        return u'' + \
+        '     ref_id: %s\n' % self.ref_id + \
+        '      title: %s\n' % self.title + \
+        '    authors: %s\n' % self.authors + \
+        'publication: %s\n' % self.publication + \
+        '     volume: %s\n' % self.volume + \
+        '      issue: %s\n' % self.issue + \
+        '     series: %s\n' % self.series + \
+        '       date: %s\n' % self.date + \
+        '      pages: %s\n' % self.pages + \
+        '        doi: %s\n' % self.doi + \
+        '        pii: %s\n' % self.pii
+
