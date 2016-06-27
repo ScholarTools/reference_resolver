@@ -102,13 +102,10 @@ def resolve_citation(citation):
     # If it has, return saved information
     saved_info = get_saved_info(doi)
     if saved_info is not None:
-        saved_paper_info = PaperInfo()
-        for k, v in saved_info.items():
-            setattr(saved_paper_info, k, v)
-        saved_paper_info.make_interface_object()
-        return saved_paper_info
+        saved_info.make_interface_object()
+        return saved_info
 
-    paper_info = doi_to_info(doi, doi_prefix, url)
+    paper_info = doi_to_info(doi=doi, url=url)
 
     idnum = assign_id()
     paper_info.idnum = idnum
@@ -137,19 +134,12 @@ def resolve_doi(doi):
     """
     doi_prefix = doi[0:7]
 
-    # Same steps as in resolve_citation
+    # Check for the DOI and corresponding paper in user's database.
+    # If it has already been saved, return saved values.
     saved_info = get_saved_info(doi)
     if saved_info is not None:
-        '''
-        saved_paper_info = PaperInfo()
-        for k, v in saved_info.items():
-            setattr(saved_paper_info, k, v)
-        import pdb
-        pdb.set_trace()
-        '''
         saved_info.make_interface_object()
         return saved_info
-
 
 
     paper_info = doi_to_info(doi)
@@ -263,89 +253,6 @@ def assign_id():
 
     idnum = ''.join(random.SystemRandom().choice(string.ascii_uppercase + string.digits) for _ in range(8))
     return idnum
-
-'''
-def get_saved_info(doi):
-    """
-    Checks if paper information has previously been saved, and if so,
-    retrieves that information from local files.
-
-    Parameters
-    ----------
-    doi : str
-        Unique ID assigned to a journal article.
-
-    Returns
-    -------
-    json.loads(wholestring) : JSON-formatted dict
-        See Also: resolve_citation. This return value is the same as
-        paper_info, but as a dict, not str.
-
-    """
-    current_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-    root_dir = os.path.dirname(current_dir)
-    doi_list_file = os.path.join(root_dir, 'paper_data/doi_list.csv')
-    paper_data_dir = os.path.join(root_dir, 'paper_data/')
-
-    with open(doi_list_file, 'r') as dlist:
-        reader = csv.reader(dlist)
-        saved_id = None
-        for row in reader:
-            if doi == row[0]:
-                saved_id = row[1]
-
-    if saved_id is not None:
-        file_name = str(doi[0:7]) + '/' + saved_id + '.txt'
-        new_file = os.path.join(paper_data_dir, file_name)
-        with open(new_file, 'r') as file:
-            wholestring = file.read()
-        return json.loads(wholestring)
-    else:
-        return None
-
-
-def log_info(paper_info):
-    """
-    Saves article information to local files for retrieval.
-
-    Papers from a specific publisher are organized by their DOI prefix.
-    A directory with that prefix name is made if it does not already
-    exist, and a file named using idnum is created, which holds
-    paper_info. In a separate doi_list.csv file, the DOI and its
-    assigned idnum are saved as a tuple so that the information can
-    be found later.
-
-    Parameters
-    ----------
-    paper_info : PaperInfo
-        See resolve_citation for description.
-
-    """
-
-    current_dir = os.path.dirname(os.path.abspath(inspect.getfile(inspect.currentframe())))
-    doi_list_file = os.path.join(current_dir, 'paper_data/doi_list.csv')
-    paper_data_dir = os.path.join(current_dir, 'paper_data/')
-
-    # First make a folder for DOI prefix if one does not already exist
-    os.makedirs(os.path.join(paper_data_dir, str(paper_info.doi_prefix)), exist_ok=True)
-
-    # Log the DOI and corresponding identifying ID number on master CSV file
-    with open(doi_list_file, 'a') as dlist:
-        writer = csv.writer(dlist)
-        writer.writerow([paper_info.doi, paper_info.idnum])
-
-    file_name = str(paper_info.doi_prefix) + '/' + str(paper_info.idnum) + '.txt'
-
-    # Create dict of relevant information from paper_info
-    pi_dict = dict()
-    pi_dict['entry'] = paper_info.entry
-    pi_dict['references'] = paper_info.references
-    pi_dict['doi'] = paper_info.doi
-    pi_dict['scraper_obj'] = paper_info.scraper_obj
-
-    with open(os.path.join(paper_data_dir, file_name), 'w') as paper:
-        paper.write(json.dumps(pi_dict))
-'''
 
 '''
 DOI_SEARCH = 'http://doi.crossref.org/search/doi'

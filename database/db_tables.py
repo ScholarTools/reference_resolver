@@ -47,7 +47,6 @@ class MainPaperInfo(Base):
     def __repr__(self):
         return u'' + \
         '      title: %s\n' % self.title + \
-        '    authors: %s\n' % self.authors + \
         '   keywords: %s\n' % self.keywords + \
         'publication: %s\n' % self.publication + \
         '       date: %s\n' % self.date + \
