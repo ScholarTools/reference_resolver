@@ -16,6 +16,8 @@ link = 'http://onlinelibrary.wiley.com/doi/10.1002/biot.201400046/references'
 
 doi = '10.1002/biot.201400046'
 
+doi = '10.1016/S0304-3991(00)00076-0'
+
 #paper_info = rr.resolve_citation(citation)
 #print(paper_info['entry'])
 #print(paper_info['references'][0])
@@ -27,14 +29,16 @@ doi = '10.1002/biot.201400046'
 
 paper_info = rr.resolve_doi(doi)
 references = paper_info.references
+
 #print(refs)
 #print(len(refs))
-
+'''
 session = Session()
 
 mainentry = session.query(tables.MainPaperInfo).all()
 refs = session.query(tables.References).all()
 mapping = session.query(tables.RefMapping).all()
+'''
 
 import pdb
 pdb.set_trace()

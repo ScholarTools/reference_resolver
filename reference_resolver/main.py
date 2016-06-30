@@ -50,12 +50,13 @@ import sqlalchemy
 # Local imports
 from pypub.paper_info import PaperInfo
 import pypub.publishers.pub_resolve as pub_resolve
+from pypub.utils import find_nth
 
 from database.db_logging import *
 # -----------------------------------------------------
 
 
-def resolve_citation(citation):
+def paper_info_from_citation(citation):
     """
     Gets the paper and references information from
     a plaintext citation.
@@ -96,7 +97,6 @@ def resolve_citation(citation):
     if doi[0:18] == 'http://dx.doi.org/':
         url = doi
         doi = doi[18:]
-    doi_prefix = doi[0:7]
 
     # Check if this DOI has been searched and saved before.
     # If it has, return saved information
@@ -106,16 +106,12 @@ def resolve_citation(citation):
         return saved_info
 
     paper_info = doi_to_info(doi=doi, url=url)
-
-    idnum = assign_id()
-    paper_info.idnum = idnum
-
     log_info(paper_info)
 
     return paper_info
 
 
-def resolve_doi(doi):
+def paper_info_from_doi(doi):
     """
     Gets the paper and references information from an article DOI.
 
@@ -134,6 +130,7 @@ def resolve_doi(doi):
     """
     doi_prefix = doi[0:7]
 
+
     # Check for the DOI and corresponding paper in user's database.
     # If it has already been saved, return saved values.
     saved_info = get_saved_info(doi)
@@ -142,13 +139,14 @@ def resolve_doi(doi):
         return saved_info
 
 
-    paper_info = doi_to_info(doi)
-    idnum = assign_id()
-    paper_info.idnum = idnum
-
+    paper_info = doi_to_info(doi=doi)
     log_info(paper_info)
 
     return paper_info
+
+
+def paper_info_from_link(link):
+    pub_dict = resolve_link(link)
 
 
 def resolve_link(link):
@@ -176,7 +174,10 @@ def resolve_link(link):
     if link[0:4] != 'http':
         link = 'http://' + link
 
-    base_url = link[:link.find('.com')+4]
+    # Find the third '/', which should be after the base URL
+    # i.e. giving something like http://onlinelibrary.wiley.com/
+    end_of_base_url = find_nth(link, '/', 3)
+    base_url = link[:end_of_base_url+1]
 
     return pub_resolve.get_publisher_site_info(base_url=base_url)
 
@@ -235,24 +236,6 @@ def doi_to_info(doi=None, url=None):
     paper_info.populate_info()
 
     return paper_info
-
-
-def assign_id():
-    """
-    Generates an ID string specific to this program and file system
-    to save article information. This is because not all papers will
-    always have a DOI/PubMed ID/etc. so there needs to be a way to
-    save the articles for later local retrieval.
-
-    Returns
-    -------
-    idnum : str
-        Randomly generated alphanumeric string of length 8
-
-    """
-
-    idnum = ''.join(random.SystemRandom().choice(string.ascii_uppercase + string.digits) for _ in range(8))
-    return idnum
 
 '''
 DOI_SEARCH = 'http://doi.crossref.org/search/doi'

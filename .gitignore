@@ -1,3 +1,5 @@
 __pycache__
 /paper_data/
 *.db
+
+delete_from_database.py

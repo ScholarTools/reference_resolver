@@ -11,7 +11,6 @@ from database import Session
 from pypub.paper_info import PaperInfo
 from pypub.scrapers.base_objects import *
 
-
 def get_saved_info(doi):
     # Start a new Session
     session = Session()
@@ -103,15 +102,39 @@ def log_info(paper_info):
         session.add(db_map_obj)
         order += 1
 
-    # Commit and close the session
-    try:
-        session.commit()
-    except:
-        session.rollback()
-        raise DatabaseError('Error encountered while committing to database. '
-                            'Most recent information may not have been saved.')
-    finally:
-        session.close()
+    _end(session)
+
+
+def delete_info(doi):
+    """
+    Note that this will rarely be used and is mainly for debugging
+        and manual database management reasons. Even if a user opts to
+        delete a document from his/her Mendeley library, the information
+        will not be deleted from the database in case it is to be
+        retrieved again later.
+    """
+    session = Session()
+
+    matching_entries = session.query(tables.MainPaperInfo).filter_by(doi = doi).all()
+    ids = []
+    for entry in matching_entries:
+        ids.append(entry.id)
+        session.delete(entry)
+
+    for id in ids:
+        refs = session.query(tables.References).join(tables.RefMapping).\
+            filter(tables.RefMapping.main_paper_id == id).all()
+        for ref in refs:
+            session.delete(ref)
+        entry_map = session.query(tables.RefMapping).filter_by(main_paper_id = id).all()
+        for map in entry_map:
+            session.delete(map)
+
+
+    import pdb
+    pdb.set_trace()
+
+    _end(session)
 
 
 def _create_entry_table_obj(paper_info):
@@ -289,6 +312,7 @@ def _create_paper_info_from_saved(main_paper, authors, refs):
     references = []
     for ref in refs:
         rd = ref.__dict__
+        rd['authors'] = rd['authors'].split(', ')
         ref_obj = BaseRef()
         for k, v in rd.items():
             if k not in ('timestamp', '_sa_instance_state'):
@@ -297,3 +321,15 @@ def _create_paper_info_from_saved(main_paper, authors, refs):
     saved_info.references = references
 
     return saved_info
+
+
+def _end(session):
+    # Commit and close the session
+    try:
+        session.commit()
+    except:
+        session.rollback()
+        raise DatabaseError('Error encountered while committing to database. '
+                            'Most recent information may not have been saved.')
+    finally:
+        session.close()

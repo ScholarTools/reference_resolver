@@ -118,3 +118,12 @@ class References(Base):
         '        doi: %s\n' % self.doi + \
         '        pii: %s\n' % self.pii
 
+
+class LinkedNotes(Base):
+    __tablename__ = "linked_notes"
+
+    id = sql.Column(sql.INTEGER, primary_key=True)
+    main_paper_id = sql.Column(sql.INTEGER, sql.ForeignKey('main_paper_info.id'))
+    ref_paper_id = sql.Column(sql.INTEGER, sql.ForeignKey('references.id'))
+    notes = sql.Column(sql.VARCHAR)
+
