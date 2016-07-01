@@ -34,6 +34,7 @@ Steps:
 import csv
 import inspect
 import json
+import json.decoder
 import string
 import sys
 import os
@@ -52,7 +53,7 @@ from pypub.paper_info import PaperInfo
 import pypub.publishers.pub_resolve as pub_resolve
 from pypub.utils import find_nth
 
-from database.db_logging import *
+import database.db_logging as db
 # -----------------------------------------------------
 
 
@@ -88,8 +89,12 @@ def paper_info_from_citation(citation):
     # Search for citation on CrossRef.org to try to get a DOI link
     api_search_url = 'http://search.labs.crossref.org/dois?q=' + citation
     response = requests.get(api_search_url).json()
-    doi = response[0]['doi']
+    resp = response[0]
+    doi = resp.get('doi')
     print(doi)
+
+    if doi is None:
+        raise LookupError('No DOI could be found for the given citation')
 
     # If crossref returns a http://dx.doi.org/ link, retrieve the doi from it
     # and save the URL to pass to doi_to_info
@@ -100,13 +105,13 @@ def paper_info_from_citation(citation):
 
     # Check if this DOI has been searched and saved before.
     # If it has, return saved information
-    saved_info = get_saved_info(doi)
+    saved_info = db.get_saved_info(doi)
     if saved_info is not None:
         saved_info.make_interface_object()
         return saved_info
 
     paper_info = doi_to_info(doi=doi, url=url)
-    log_info(paper_info)
+    db.log_info(paper_info)
 
     return paper_info
 
@@ -133,14 +138,14 @@ def paper_info_from_doi(doi):
 
     # Check for the DOI and corresponding paper in user's database.
     # If it has already been saved, return saved values.
-    saved_info = get_saved_info(doi)
+    saved_info = db.get_saved_info(doi)
     if saved_info is not None:
         saved_info.make_interface_object()
         return saved_info
 
 
     paper_info = doi_to_info(doi=doi)
-    log_info(paper_info)
+    db.log_info(paper_info)
 
     return paper_info
 
@@ -185,6 +190,51 @@ def resolve_link(link):
 def link_to_doi(link):
     return_values = resolve_link(link)
     return return_values
+
+
+def doi_from_citation(citation):
+    """
+    Gets the DOI from
+    a plaintext citation.
+
+    Uses a search to CrossRef.org to retrive paper DOI.
+
+    Parameters
+    ----------
+    citation : str
+        Full journal article citation.
+        Example: Senís, Elena, et al. "CRISPR/Cas9‐mediated genome
+                engineering: An adeno‐associated viral (AAV) vector
+                toolbox. Biotechnology journal 9.11 (2014): 1402-1412.
+
+    Returns
+    -------
+    doi : str
+    """
+    # Encode raw citation
+    citation = urllib_quote(citation)
+
+    # Search for citation on CrossRef.org to try to get a DOI link
+    api_search_url = 'http://search.labs.crossref.org/dois?q=' + citation
+    try:
+        response = requests.get(api_search_url).json()
+    except json.decoder.JSONDecodeError:
+        return None
+
+    resp = response[0]
+    doi = resp.get('doi')
+    print(doi)
+
+    if doi is None:
+        return doi
+
+    # If crossref returns a http://dx.doi.org/ link, retrieve the doi from it
+    # and save the URL to pass to doi_to_info
+    if 'http://dx.doi.org/' in doi:
+        doi = doi.replace('http://dx.doi.org/', '')
+        doi = doi.strip()
+
+    return doi
 
 
 def doi_to_info(doi=None, url=None):

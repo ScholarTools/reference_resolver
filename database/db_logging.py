@@ -46,12 +46,13 @@ def log_info(paper_info):
     # Start a new Session
     session = Session()
 
-    doi = paper_info.doi
+    doi = paper_info.doi.lower()
 
     # Check if the DOI is already in the main paper database
     existing_doi = session.query(tables.MainPaperInfo).filter_by(doi=doi).all()
     if len(existing_doi) > 0:
-        raise DatabaseError('Paper already exists in database')
+        return
+        #raise DatabaseError('Paper already exists in database')
 
     # Create entry for main paper table
     main_entry = _create_entry_table_obj(paper_info)
@@ -133,6 +134,22 @@ def delete_info(doi):
 
     import pdb
     pdb.set_trace()
+
+    _end(session)
+
+
+def update_reference_field(identifying_value, updating_field, updating_value, filter_by_title=False, filter_by_doi=False):
+    session = Session()
+    if filter_by_title:
+        entries = session.query(tables.References).filter_by(title = identifying_value).all()
+    elif filter_by_doi:
+        entries = session.query(tables.References).filter_by(doi = identifying_value).all()
+    else:
+        _end(session)
+        return
+
+    for entry in entries:
+        setattr(entry, updating_field, updating_value)
 
     _end(session)
 

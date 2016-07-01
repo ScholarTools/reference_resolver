@@ -1,6 +1,7 @@
 # Local imports
 from scopy import Scopus
 import reference_resolver as rr
+import database.db_logging as db
 
 api = Scopus()
 
@@ -24,7 +25,15 @@ def retrieve_all_info(input, input_type):
 
     """
     paper_info = None
+
     if input_type == 'doi':
+        # Check for the DOI and corresponding paper in user's database.
+        # If it has already been saved, return saved values.
+        saved_info = db.get_saved_info(input)
+        if saved_info is not None:
+            saved_info.make_interface_object()
+            return saved_info
+
         paper_info = api.get_all_data.get_from_doi(doi=input)
 
         if paper_info.references == [] or paper_info.entry == None:
