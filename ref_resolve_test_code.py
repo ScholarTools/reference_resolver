@@ -1,13 +1,7 @@
 # Third party
-import sqlalchemy as sql
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy import types
 
 # Local
 from reference_resolver import main as rr
-import database.db_tables as tables
-from database import Session
 
 citation = 'Senís, Elena, et al. "CRISPR/Cas9‐mediated genome engineering: An adeno‐associated viral (AAV) vector ' + \
            'toolbox. Biotechnology journal 9.11 (2014): 1402-1412.'

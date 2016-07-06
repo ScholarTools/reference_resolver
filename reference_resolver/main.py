@@ -31,14 +31,10 @@ Steps:
 
 """
 # Standard imports
-import csv
-import inspect
 import json
 import json.decoder
-import string
 import sys
-import os
-import random
+
 if sys.version_info.major == 2:
     from urllib import quote as urllib_quote
 else:
@@ -46,14 +42,15 @@ else:
 
 # Third party imports
 import requests
-import sqlalchemy
 
 # Local imports
 from pypub.paper_info import PaperInfo
 import pypub.publishers.pub_resolve as pub_resolve
 from pypub.utils import find_nth
 
-import database.db_logging as db
+from database import db_logging as db
+
+
 # -----------------------------------------------------
 
 

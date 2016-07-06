@@ -1,7 +1,8 @@
 # Local imports
-from scopy import Scopus
-import reference_resolver as rr
 import database.db_logging as db
+
+import reference_resolver as rr
+from scopy import Scopus
 
 api = Scopus()
 
