@@ -3,6 +3,9 @@
 Reference Resolver
 ------------------
 
+NOTE: All of these approaches use web-scraping directly from publisher sites.
+
+
 Goal:
     Take something like this:
         Senís, Elena, et al. "CRISPR/Cas9‐mediated genome engineering:
@@ -113,7 +116,7 @@ def paper_info_from_citation(citation):
     return paper_info
 
 
-def paper_info_from_doi(doi):
+def paper_info_from_doi(doi, skip_saved=False):
     """
     Gets the paper and references information from an article DOI.
 
@@ -132,13 +135,13 @@ def paper_info_from_doi(doi):
     """
     doi_prefix = doi[0:7]
 
-
-    # Check for the DOI and corresponding paper in user's database.
-    # If it has already been saved, return saved values.
-    saved_info = db.get_saved_info(doi)
-    if saved_info is not None:
-        saved_info.make_interface_object()
-        return saved_info
+    if not skip_saved:
+        # Check for the DOI and corresponding paper in user's database.
+        # If it has already been saved, return saved values.
+        saved_info = db.get_saved_info(doi)
+        if saved_info is not None:
+            saved_info.make_interface_object()
+            return saved_info
 
 
     paper_info = doi_to_info(doi=doi)
@@ -189,7 +192,7 @@ def link_to_doi(link):
     return return_values
 
 
-def doi_from_citation(citation):
+def doi_and_title_from_citation(citation):
     """
     Gets the DOI from
     a plaintext citation.
@@ -220,10 +223,10 @@ def doi_from_citation(citation):
 
     resp = response[0]
     doi = resp.get('doi')
-    print(doi)
+    title = resp.get('title')
 
     if doi is None:
-        return doi
+        return None
 
     # If crossref returns a http://dx.doi.org/ link, retrieve the doi from it
     # and save the URL to pass to doi_to_info
@@ -231,7 +234,7 @@ def doi_from_citation(citation):
         doi = doi.replace('http://dx.doi.org/', '')
         doi = doi.strip()
 
-    return doi
+    return doi, title
 
 
 def doi_to_info(doi=None, url=None):

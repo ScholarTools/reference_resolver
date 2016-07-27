@@ -4,7 +4,7 @@ import database.db_logging as db
 import reference_resolver as rr
 from scopy import Scopus
 
-api = Scopus()
+scopus_api = Scopus()
 
 
 def retrieve_references(doi):
@@ -15,15 +15,17 @@ def retrieve_references(doi):
     to the paper in the database.
 
     """
-    tried_rr = False
-    try:
-        refs = api.bibliography_retrieval.get_from_doi(doi=doi)
-    except LookupError or ConnectionRefusedError or ConnectionError:
-        tried_rr = True
-        paper_info = rr.doi_to_info(doi=doi)
-        refs = paper_info.references
 
-    if len(refs) == 0 and not tried_rr:
+    if doi is None:
+        return None
+
+    try:
+        refs = scopus_api.bibliography_retrieval.get_from_doi(doi=doi)
+    except LookupError or ConnectionRefusedError or ConnectionError:
+        refs = None
+        pass
+
+    if refs is None or len(refs) == 0:
         paper_info = rr.doi_to_info(doi=doi)
         refs = paper_info.references
 
@@ -50,17 +52,30 @@ def retrieve_all_info(input, input_type, skip_saved=False):
         if not skip_saved:
             saved_info = db.get_saved_info(input)
             if saved_info is not None:
-                saved_info.make_interface_object()
-                return saved_info
+                if len(saved_info.references) > 0:
+                    saved_info.make_interface_object()
+                    return saved_info
+                else:
+                    saved_info.references = retrieve_references(saved_info.doi)
+                    # These lines probably don't belong in this function. This is for the case in which
+                    # a paper's information has already been saved in the database, but has no corresponding
+                    # references. This saves the references after having retrieved them.
+                    if saved_info.references is not None and len(saved_info.references) > 0:
+                        for ref in paper_info.references:
+                            db.add_reference(ref=ref, main_paper_doi=paper_info.doi.lower(),
+                                             main_paper_title=getattr(paper_info.entry, 'title', None))
+                    else:
+                        return saved_info
 
         try:
-            paper_info = api.get_all_data.get_from_doi(doi=input)
+            # This next line fetches information from Scopus
+            paper_info = scopus_api.get_all_data.get_from_doi(doi=input)
         except LookupError or ConnectionRefusedError or ConnectionError:
-            paper_info = rr.paper_info_from_doi(doi=input)
+            # If Scopus could not connect or info wasn't found there,
+            # this line attempts to web-scrape from a publisher site.
+            paper_info = rr.paper_info_from_doi(doi=input, skip_saved=True)
 
-        if len(paper_info.references) == 0 or paper_info.entry is None:
-            paper_info = rr.paper_info_from_doi(doi=input)
     elif input_type == 'pubmed_id':
-        paper_info = api.get_all_data.get_from_pubmed(pubmed_id=input)
+        paper_info = scopus_api.get_all_data.get_from_pubmed(pubmed_id=input)
 
     return paper_info
