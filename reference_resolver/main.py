@@ -48,8 +48,11 @@ import requests
 
 # Local imports
 from pypub.paper_info import PaperInfo
-import pypub.publishers.pub_resolve as pub_resolve
+from pypub.publishers import pub_resolve
 from pypub.utils import find_nth
+from reference_resolver import ref_retrieval
+
+from scopy import Scopus
 
 from database import db_logging as db
 
@@ -110,12 +113,13 @@ def paper_info_from_citation(citation):
         saved_info.make_interface_object()
         return saved_info
 
-    paper_info = doi_to_info(doi=doi, url=url)
+    paper_info = doi_to_webscraped_info(doi=doi, url=url)
     db.log_info(paper_info)
 
     return paper_info
 
-
+# This is commented out because retrieve_all_info subsumes it.
+'''
 def paper_info_from_doi(doi, skip_saved=False):
     """
     Gets the paper and references information from an article DOI.
@@ -133,8 +137,6 @@ def paper_info_from_doi(doi, skip_saved=False):
         See resolve_citation for description.
 
     """
-    doi_prefix = doi[0:7]
-
     if not skip_saved:
         # Check for the DOI and corresponding paper in user's database.
         # If it has already been saved, return saved values.
@@ -144,10 +146,11 @@ def paper_info_from_doi(doi, skip_saved=False):
             return saved_info
 
 
-    paper_info = doi_to_info(doi=doi)
+    paper_info = doi_to_webscraped_info(doi=doi)
     db.log_info(paper_info)
 
     return paper_info
+'''
 
 
 def paper_info_from_link(link):
@@ -237,7 +240,7 @@ def doi_and_title_from_citation(citation):
     return doi, title
 
 
-def doi_to_info(doi=None, url=None):
+def doi_to_webscraped_info(doi=None, url=None):
     """
     Gets entry and references information for an article DOI.
 
@@ -282,10 +285,71 @@ def doi_to_info(doi=None, url=None):
     pub_dict = pub_resolve.get_publisher_site_info(publisher_base_url)
 
     # Create a PaperInfo object to hold all information and call appropriate scraper
-    paper_info = PaperInfo(doi=doi, scraper_obj=pub_dict['object'], url=full_url)
+    paper_info = PaperInfo(doi=doi, scraper_obj=pub_dict.get('object'), url=full_url)
     paper_info.populate_info()
 
     return paper_info
+
+
+def retrieve_all_info(input, input_type, skip_saved=False):
+    """
+    Checks Scopus first, and then web-scrapes.
+
+    Potential input types:
+    'doi', 'pubmed_id', 'eid', 'url'
+
+    Returns
+    -------
+    paper_info : PaperInfo object
+
+    """
+    paper_info = None
+
+    scopus_api = Scopus()
+
+    if input_type == 'doi':
+        # Check for the DOI and corresponding paper in user's database.
+        # If it has already been saved, return saved values.
+        if not skip_saved:
+            saved_info = db.get_saved_info(input)
+            if saved_info is not None:
+                if len(saved_info.references) > 0:
+                    saved_info.make_interface_object()
+                    return saved_info
+                else:
+                    saved_info.references = ref_retrieval.retrieve_references(saved_info.doi)
+                    # These lines probably don't belong in this function. This is for the case in which
+                    # a paper's information has already been saved in the database, but has no corresponding
+                    # references. This saves the references after having retrieved them.
+                    if saved_info.references is not None and len(saved_info.references) > 0:
+                        for ref in saved_info.references:
+                            db.add_reference(ref=ref, main_paper_doi=saved_info.doi.lower(),
+                                             main_paper_title=getattr(saved_info.entry, 'title', None))
+                    else:
+                        return saved_info
+
+        try:
+            # This next line fetches information from Scopus
+            paper_info = scopus_api.get_all_data.get_from_doi(doi=input)
+        except LookupError or ConnectionRefusedError or ConnectionError:
+            # If Scopus could not connect or info wasn't found there,
+            # this line attempts to web-scrape from a publisher site.
+            paper_info = doi_to_webscraped_info(doi=input)
+            db.log_info(paper_info)
+
+        if paper_info.pdf_link is None:
+            if paper_info.publisher_interface is None:
+                paper_info.make_interface_object()
+            try:
+                paper_info.pdf_link = paper_info.publisher_interface.get_pdf_link(input)
+            except Exception:
+                pass
+
+    elif input_type == 'pubmed_id':
+        paper_info = scopus_api.get_all_data.get_from_pubmed(pubmed_id=input)
+
+    return paper_info
+
 
 '''
 DOI_SEARCH = 'http://doi.crossref.org/search/doi'

@@ -19,9 +19,9 @@ doi = '10.1016/S0304-3991(00)00076-0'
 
 #paper_info = rr.resolve_doi(doi)
 
-#doi = '10.1038/nrg3686'
+doi = '10.1038/nrg3686'
 
-paper_info = rr.resolve_doi(doi)
+paper_info = rr.paper_info_from_doi(doi, skip_saved=True)
 references = paper_info.references
 
 #print(refs)
