@@ -6,3 +6,5 @@ Contains all custom errors called within the reference_resolver package.
 class DatabaseError(Exception):
     pass
 
+class UnsupportedTypeError(Exception):
+    pass
