@@ -314,18 +314,19 @@ def retrieve_all_info(input, input_type, skip_saved=False):
         if not skip_saved:
             saved_info = db.get_saved_info(input)
             if saved_info:
-                saved_info.make_interface_object()
-                return saved_info
-            else:
-                saved_info.references = ref_retrieval.retrieve_references(saved_info.doi)
-                # These lines probably don't belong in this function. This is for the case in which
-                # a paper's information has already been saved in the database, but has no corresponding
-                # references. This saves the references after having retrieved them.
-                if saved_info.references is not None and len(saved_info.references) > 0:
-                    db.add_references(refs=saved_info.references, main_paper_doi=saved_info.doi.lower(),
-                                     main_paper_title=getattr(saved_info.entry, 'title', None))
-                else:
+                if getattr(saved_info, 'references', None) is not None:
+                    saved_info.make_interface_object()
                     return saved_info
+                else:
+                    saved_info.references = ref_retrieval.retrieve_references(saved_info.doi)
+                    # These lines probably don't belong in this function. This is for the case in which
+                    # a paper's information has already been saved in the database, but has no corresponding
+                    # references. This saves the references after having retrieved them.
+                    if saved_info.references is not None and len(saved_info.references) > 0:
+                        db.add_references(refs=saved_info.references, main_paper_doi=saved_info.doi.lower(),
+                                         main_paper_title=getattr(saved_info.entry, 'title', None))
+                    else:
+                        return saved_info
 
         try:
             # This next line fetches information from Scopus
@@ -368,7 +369,7 @@ def retrieve_only_references(input, input_type, skip_saved=False):
         # Check for the DOI and corresponding paper in user's database.
         # If it has already been saved, return saved values.
         if not skip_saved:
-            references = db.get_references_from_db(input)
+            references, main_paper_exists = db.get_references_from_db(input)
             if references:
                 return references
             else:
@@ -376,7 +377,7 @@ def retrieve_only_references(input, input_type, skip_saved=False):
                 # These lines probably don't belong in this function. This is for the case in which
                 # a paper's information has already been saved in the database, but has no corresponding
                 # references. This saves the references after having retrieved them.
-                if references:
+                if references and main_paper_exists:
                     db.add_references(refs=references, main_paper_doi=input.lower())
                 else:
                     return references
