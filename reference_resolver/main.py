@@ -50,6 +50,7 @@ import requests
 from pypub.paper_info import PaperInfo
 from pypub.publishers import pub_resolve
 from pypub.utils import find_nth
+from pypub.pypub_errors import *
 from . import ref_retrieval
 from .rr_errors import *
 
@@ -282,11 +283,11 @@ def doi_to_webscraped_info(doi=None, url=None):
 
     """
     # Resolve DOI or URL through PyPub pub_resolve methods
-    publisher_base_url, full_url = pub_resolve.get_publisher_urls(doi=doi, url=url)
-    pub_dict = pub_resolve.get_publisher_site_info(publisher_base_url)
+    publisher = pub_resolve.publisher_from_doi_or_url(doi=doi, url=url)
 
     # Create a PaperInfo object to hold all information and call appropriate scraper
-    paper_info = PaperInfo(doi=doi, scraper_obj=pub_dict.get('object'), url=full_url)
+    paper_info = PaperInfo(doi=doi, url=url)
+    paper_info.publisher_interface = publisher
     paper_info.populate_info()
 
     return paper_info
@@ -339,11 +340,15 @@ def retrieve_all_info(input, input_type, skip_saved=False):
 
         if paper_info.pdf_link is None:
             if paper_info.publisher_interface is None:
-                paper_info.make_interface_object()
-            try:
-                paper_info.pdf_link = paper_info.publisher_interface.get_pdf_link(input)
-            except Exception:
-                pass
+                try:
+                    paper_info.make_interface_object()
+                except UnsupportedPublisherError:
+                    paper_info.publisher_interface = None
+            if paper_info.publisher_interface is not None:
+                try:
+                    paper_info.pdf_link = paper_info.publisher_interface.get_pdf_link(input)
+                except Exception:
+                    pass
 
     elif input_type == 'pubmed_id':
         paper_info = scopus_api.get_all_data.get_from_pubmed(pubmed_id=input)
