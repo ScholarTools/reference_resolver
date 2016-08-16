@@ -242,7 +242,7 @@ def doi_and_title_from_citation(citation):
     return doi, title
 
 
-def doi_to_webscraped_info(doi=None, url=None):
+def doi_to_webscraped_info(doi=None, url=None, refs_only=False):
     """
     Gets entry and references information for an article DOI.
 
@@ -288,7 +288,10 @@ def doi_to_webscraped_info(doi=None, url=None):
     # Create a PaperInfo object to hold all information and call appropriate scraper
     paper_info = PaperInfo(doi=doi, url=url)
     paper_info.publisher_interface = publisher
-    paper_info.populate_info()
+    if refs_only:
+        paper_info.get_references()
+    else:
+        paper_info.populate_info()
 
     return paper_info
 
@@ -383,7 +386,7 @@ def retrieve_only_references(input, input_type, skip_saved=False):
                 # a paper's information has already been saved in the database, but has no corresponding
                 # references. This saves the references after having retrieved them.
                 if references and main_paper_exists:
-                    db.add_references(refs=references, main_paper_doi=input.lower())
+                    db.add_references(refs=references, main_paper_doi=input)
                 else:
                     return references
 

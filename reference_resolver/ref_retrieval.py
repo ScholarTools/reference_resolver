@@ -26,7 +26,7 @@ def retrieve_references(doi):
         pass
 
     if refs is None or len(refs) == 0:
-        paper_info = rr.doi_to_webscraped_info(doi=doi)
+        paper_info = rr.doi_to_webscraped_info(doi=doi, refs_only=True)
         refs = paper_info.references
 
     return refs
