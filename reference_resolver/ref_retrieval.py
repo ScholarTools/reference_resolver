@@ -1,11 +1,15 @@
 # Local imports
-import database.db_logging as db
+#import database.db_logging as db
 
+#JAH: Why are we reaching back to the root?
 import reference_resolver as rr
+
+#What is this for????? - can we make this optional?????
 from scopy import Scopus
 
 scopus_api = Scopus()
 
+#Why just this one function in this module??????
 
 def retrieve_references(doi):
     """

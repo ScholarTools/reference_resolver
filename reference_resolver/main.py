@@ -46,18 +46,39 @@ else:
 # Third party imports
 import requests
 
-# Local imports
-from pypub.paper_info import PaperInfo
+# Other Scholar Tools Imports
+#--------------------------------------------
+try:
+    from pypub.paper_info import PaperInfo
+except ImportError:
+    raise Exception("The pypub package is required for this code")
+
+
 from pypub.publishers import pub_resolve
+
 from pypub.utils import find_nth
-from pypub.pypub_errors import *
-from . import ref_retrieval
-from .rr_errors import *
 
-from scopy import Scopus
 
-from database import db_logging as db
+import pypub.errors as pypub_errors
 
+#from . import ref_retrieval
+from . import errors
+
+#TODO: Make an optional module ...
+#TODO: Provide consistent optional summary ...
+#from scopy import Scopus
+Scopus = []
+
+
+#from database import db_logging as db
+
+#DB Methods
+#1) db.log_info(paper_info)
+#2) db.get_saved_info(doi)
+#3)   db.add_references(refs=saved_info.references, main_paper_doi=saved_info.doi.lower(),
+#                                         main_paper_title=getattr(saved_info.entry, 'title', None))
+#4) references, main_paper_exists = db.get_references_from_db(input)
+#5) db.add_references(refs=references, main_paper_doi=input)
 
 # -----------------------------------------------------
 
@@ -345,7 +366,7 @@ def retrieve_all_info(input, input_type, skip_saved=False):
             if paper_info.publisher_interface is None:
                 try:
                     paper_info.make_interface_object()
-                except UnsupportedPublisherError:
+                except pypub_errors.UnsupportedPublisherError:
                     paper_info.publisher_interface = None
             if paper_info.publisher_interface is not None:
                 try:
@@ -398,7 +419,7 @@ def retrieve_only_references(input, input_type, skip_saved=False):
         paper_info = scopus_api.get_all_data.get_from_pubmed(pubmed_id=input)
         return paper_info
     else:
-        raise UnsupportedTypeError('Only DOI and PMID lookups are supported at this time.')
+        raise errors.UnsupportedTypeError('Only DOI and PMID lookups are supported at this time.')
 
 
 
