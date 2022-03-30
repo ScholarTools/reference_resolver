@@ -1,8 +1,8 @@
 """
 
 This is meant to extend the doi_prefix_dict.txt dictionary by adding
-either base URLs or some other standard identifier besides the full publisher name
-to get from the DOI prefix to a site.
+either base URLs or some other standard identifier besides the full publisher
+name to get from the DOI prefix to a site.
 
 Starting point for popular DOI prefixes:
 https://webhome.weizmann.ac.il/home/comartin/doi.html

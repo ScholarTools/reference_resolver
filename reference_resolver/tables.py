@@ -2,20 +2,57 @@
 """
 """
 
+#Standard
+#------------------------
 import datetime
+import os
 
-from sqlalchemy import create_engine
+
+# Third party imports
+#--------------------------------------
 import sqlalchemy as sql
+from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import Session
-
-
-from reference_resolver.utils import get_truncated_display_string as td
-from reference_resolver import utils
-#from .utils import get_list_class_display as cld
 
 Base = declarative_base()
+
+# Local imports
+#-------------------------------------
+from . import tables
+
+package_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+
+
+# SQLite is used to maintain a local database
+db_path = os.path.join(package_path,'refs.db')
+dialect = 'sqlite:///'
+
+# Combine the dialect and path names to use as params for the engine
+engine_params = dialect + db_path
+
+engine = sql.create_engine(engine_params, echo=False)
+Base.metadata.create_all(engine)
+Session = sessionmaker(bind=engine)
+
+
+#============================================================
+
+
+
+#from .utils import get_truncated_display_string as td
+from . import utils
+#from .utils import get_list_class_display as cld
+
     
+class UnknownReference(Base):
+    __tablename__ = 'unknown_references'
+    
+    id = sql.Column(sql.INTEGER, primary_key=True)
+    ref_id = sql.Column(sql.INTEGER, sql.ForeignKey('unknown_references.id'))
+    
+    unknown_text = sql.Column(sql.VARCHAR)
+    #If we don't know the reference, put the text here
+
 class Reference(Base):
     """
     This table keeps track of paper references.
@@ -33,21 +70,13 @@ class Reference(Base):
     
     ordering = sql.Column(sql.INTEGER)
     
-    unknown_text = sql.Column(sql.VARCHAR)
-    #If we don't know the reference, put the text here
-    
-
     def __repr__(self):
         pv = ['id: ', self.id,
               'main_paper_id: ', self.main_paper_id,
               'ref_paper_id: ', self.ref_paper_id,
-              'ordering',self.ordering,
-              'unknown_text',td(self.unknown_text)]
+              'ordering',self.ordering]
         return utils.property_values_to_string(pv)
     
-    
-    #    return "<RefMapping(original_paper='%d', ref_paper='%d')>" % (self.main_paper_id, self.ref_paper_id)
-
 class Paper(Base):
     __tablename__ = 'papers'
 
@@ -55,76 +84,43 @@ class Paper(Base):
 
     doi = sql.Column(sql.VARCHAR)
     pmid = sql.Column(sql.BigInteger)
+    isbn = sql.Column(sql.VARCHAR)
+    chapter = sql.Column(sql.INTEGER)
+    first_page = sql.Column(sql.VARCHAR)
     created = sql.Column(sql.DateTime, default=datetime.datetime.utcnow)
     updated = sql.Column(sql.DateTime, onupdate=datetime.datetime.utcnow)
+    #TODO: Need something to indicate that we have added the references
+    #- but we might want to know how as well for later verification
+    #- as well as when the references were added
     
     new_pointer = sql.Column(sql.BigInteger, default=0)
     #If we ever need to merge duplicates all duplicates will point to a new id
-        
-    
-    #doi_prefix = sql.Column(sql.VARCHAR)
-    #title = sql.Column(sql.VARCHAR)
-    #publication = sql.Column(sql.VARCHAR)
-    #date = sql.Column(sql.VARCHAR)
-    #syear = sql.Column(sql.VARCHAR)
-    
-    
-    #----------
-    #date_created
-    #date_updated
-    #new_pointer - 0 - 
-    #is_unknown_type - raw text that can't be identified
 
-if __name__ == "__main__":
-      
+    def __repr__(self):
+        pv = ['id: ', self.id,
+              'doi: ', self.doi,
+              'pmid: ', self.pmid,
+              'created',self.created,
+              'updated',self.updated,
+              'new_pointer',self.new_pointer]
+        return utils.property_values_to_string(pv)
     
-    engine = create_engine('sqlite:///C:/Users/RNEL/Desktop/temp/wtf.db')
-    # Bind the engine to the metadata of the Base class so that the
-    # declaratives can be accessed through a DBSession instance
-    Base.metadata.create_all(engine)
-    #Base.metadata.bind = engine
-     
-    #tables.Base.metadata.create_all(engine)
-    #Session = sessionmaker(bind=engine)    
-     
-    session = Session(engine)
-     
-     
-    #DBSession = sessionmaker(bind=engine)
-    # A DBSession() instance establishes all conversations with the database
-    # and represents a "staging zone" for all the objects loaded into the
-    # database session object. Any change made against the objects in the
-    # session won't be persisted into the database until you call
-    # session.commit(). If you're not happy about the changes, you can
-    # revert all of them back to the last commit by calling
-    # session.rollback()
-    #session = DBSession()
-     
-    # Insert a Person in the person table
-    for i in range(100):
-        new_paper = Paper(pmid=i+1)
-        session.add(new_paper)
+    @staticmethod
+    def create_from_doi(input_doi):
+        #populate other properties here as well
         
-    for i in range(10):
-        ref = Reference(main_paper_id=10,ref_paper_id=i)  
-        session.add(ref)
+        #How would we know what other properties to add?
+        #e.g. if we add book, we don't need Pubmed
+        import pdb
+        pdb.set_trace()
+        pass
     
-    session.commit()
-    
-    import pdb
-    pdb.set_trace()
-    
-    wtf = session.query(Paper).filter_by(pmid=10)
-    wtf = session.query(Reference).filter_by(main_paper_id=10)
-    
-    session.close()
-    #wtf.count()
-    #wtf2 = wtf.first()
-    
-    
-    #
-    
-    # Insert an Address in the address table
-    #new_address = Address(post_code='00000', person=new_person)
-    #session.add(new_address)
-    #session.commit()
+    @staticmethod
+    def get_from_doi(input_doi):
+        #TODO: Option for creating if no exist
+        session = Session()
+        result = session.query(Paper).filter_by(doi=input_doi)
+        obj = result.first()
+        return obj
+        
+
